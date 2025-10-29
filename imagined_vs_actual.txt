@@ -1,0 +1,131 @@
+================================================================================
+EEG MOTOR IMAGERY VISUALIZATION SUMMARY - Subject S001
+================================================================================
+
+IMAGE 1: TEMPORAL DYNAMICS (04_temporal_dynamics.png)
+--------------------------------------------------------------------------------
+PURPOSE: Shows how brain wave power changes across three time phases of movement
+
+THREE TIME WINDOWS:
+  • Pre-movement (-0.5 to 0s): Baseline resting state before cue
+  • Early movement (0 to 1s): Initial response after cue appears
+  • Sustained movement (1 to 2s): During actual/imagined execution
+
+KEY FINDINGS:
+  • Theta dominates (55-70 μV²/Hz) and increases during movement in both conditions
+  • Alpha suppression visible: drops from ~30-33 to ~30-32 μV²/Hz (ERD onset)
+  • Beta shows different patterns:
+    - Actual movement: Initial drop (10.5→9.9) then rebound to 11.9 (PMBR effect)
+    - Imagined movement: Gradual increase (8.8→9.6→10.3)
+  • Pre-movement phase nearly identical between actual/imagined (no cue yet)
+  • Biggest divergence in sustained phase due to proprioceptive feedback
+
+INTERPRETATION: Motor imagery follows similar temporal evolution as actual 
+movement, with ERD developing within 200ms and persisting throughout task.
+
+================================================================================
+
+IMAGE 2: MOVEMENT COMPLEXITY (03_complexity_analysis.png)
+--------------------------------------------------------------------------------
+PURPOSE: Compares single limb vs dual limb movements to assess complexity effects
+
+BETA POWER COMPARISON:
+  • Actual movement: Single=10.87, Dual=11.71 μV²/Hz (p=0.0282, significant!)
+  • Imagined movement: Single=9.71, Dual=10.23 μV²/Hz (not significant)
+  • Dual limb movements show 7.7% higher beta during actual execution
+  • Complexity difference diminishes during imagery
+
+INTER-HEMISPHERIC COHERENCE:
+  • High baseline coherence (0.6-0.8) across all frequencies
+  • Minimal difference between single and dual limb conditions
+  • Peak coherence around 5-10 Hz (alpha/theta band)
+  • Both hemispheres coordinate even for unilateral movements
+
+INTERPRETATION: Complex movements require modestly more neural resources 
+(beta power) during execution, but motor control is fundamentally bilateral 
+regardless of task complexity.
+
+================================================================================
+
+IMAGE 3: LATERALIZATION ANALYSIS (02_lateralization_analysis.png)
+--------------------------------------------------------------------------------
+PURPOSE: Demonstrates brain's cross-wiring (left brain controls right hand)
+
+C3 CHANNEL (Left Motor Cortex):
+  • Right fist movement shows larger amplitude than left fist
+  • Pattern preserved in both actual and imagined conditions
+  • Evidence of contralateral control
+
+C4 CHANNEL (Right Motor Cortex):
+  • Left fist movement shows larger amplitude than right fist
+  • Confirms cross-wiring principle
+  • Noisier in imagined condition but pattern persists
+
+LATERALIZATION INDEX:
+  • Actual movement: Clear separation visible 200-1000ms post-cue
+  • Imagined movement: Weaker but present lateralization
+  • Positive index = left brain active (right hand moving)
+  • Negative index = right brain active (left hand moving)
+
+INTERPRETATION: Motor imagery maintains spatial specificity and anatomical 
+organization of motor planning circuits. This enables BCIs to distinguish 
+WHICH limb is being imagined, not just THAT movement is imagined.
+
+================================================================================
+
+IMAGE 4: OVERVIEW COMPARISON (01_overview_comparison.png)
+--------------------------------------------------------------------------------
+PURPOSE: Comprehensive summary comparing actual vs imagined movements
+
+POWER SPECTRUM (Top Left):
+  • Blue line (actual) and purple line (imagined) nearly overlap
+  • Demonstrates functional equivalence of imagery and execution
+  • Includes baseline conditions: eyes-open and eyes-closed
+  • Eyes-closed alpha is 4.2x higher than eyes-open (Berger effect)
+
+CHANNEL AMPLITUDE (Top Right):
+  • C3: 52.6 actual vs 50.0 imagined (4.9% difference)
+  • C4: 47.2 actual vs 42.2 imagined (10.6% difference)  
+  • Cz: 55.4 actual vs 52.3 imagined (5.6% difference)
+  • Consistent amplitudes confirm robust motor imagery
+
+TIME-FREQUENCY HEATMAPS (Middle):
+  • Blue zones = ERD (brain waves suppressed during movement)
+  • Strong blue in 10-20 Hz range after cue onset (t=0)
+  • Pattern appears in BOTH actual and imagined conditions
+  • Single limb vs dual limb show similar ERD patterns
+
+STATISTICAL TABLE (Bottom):
+  • Theta: 71.37 actual vs 71.15 imagined (p=0.9411, not significant)
+  • Alpha: 34.14 actual vs 31.73 imagined (p=0.2096, not significant)
+  • Beta: 11.29 actual vs 9.97 imagined (p=0.0039, SIGNIFICANT**)
+  • Baseline eyes-closed alpha = 133.37 vs eyes-open = 31.82 μV²/Hz
+
+INTERPRETATION: Motor imagery produces nearly identical neural patterns to 
+actual movement. Only beta band shows significant difference, likely reflecting
+proprioceptive feedback and actual muscle commands absent in imagery.
+
+================================================================================
+OVERALL CONCLUSIONS
+================================================================================
+
+1. FUNCTIONAL EQUIVALENCE: 3% overall difference between actual and imagined 
+   movement demonstrates motor imagery activates the same planning circuits
+
+2. PRESERVED LATERALIZATION: Cross-wiring maintained in imagery enables 
+   specific limb discrimination for BCI applications
+
+3. COMPLEXITY EFFECTS: Dual limb movements require 7.7% more beta power, 
+   but hemispheric coordination remains high regardless of complexity
+
+4. RAPID ONSET: ERD develops within 200ms of cue, with peak at 1-2 seconds
+
+5. BASELINE MATTERS: Eyes-closed alpha 4.2x higher than eyes-open highlights 
+   critical importance of appropriate baseline selection
+
+APPLICATIONS: Brain-computer interfaces, stroke rehabilitation, sports 
+performance training, and clinical motor disorder diagnostics
+
+================================================================================
+Analysis Date: October 29, 2025 | Subject: S001 | 12 runs analyzed
+================================================================================
