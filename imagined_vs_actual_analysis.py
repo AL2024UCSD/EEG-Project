@@ -2,7 +2,7 @@
 Comprehensive analysis comparing imagined vs actual movements in EEG data
 Creates high-resolution, visually appealing visualizations
 
-Author: EEG Pipeline
+Author: Shaheer Khan
 Date: October 2025
 """
 
@@ -52,7 +52,7 @@ COLORS = {
 class ImaginedVsActualAnalyzer:
     """Analyze and visualize differences between imagined and actual movements."""
     
-    def __init__(self, subject_id: str = 'S001', base_path: str = 'raw_data'):
+    def __init__(self, subject_id: str = 'S001', base_path: str = 'eeg-motor-movementimagery-dataset-1.0.0'):
         """Initialize analyzer."""
         self.subject_id = subject_id
         self.base_path = Path(base_path) / subject_id
