@@ -28,14 +28,14 @@ def main():
     
     try:
         # Create analyzer
-        analyzer = ImaginedVsActualAnalyzer(subject_id='S001', base_path='raw_data')
+        analyzer = ImaginedVsActualAnalyzer(subject_id='S001', base_path='eeg-motor-movementimagery-dataset-1.0.0')
         
         # Run full analysis
         analyzer.run_full_analysis()
         
-        print("\n✅ Analysis completed successfully!")
-        print(f"📁 Results saved in: S001_imagined_vs_actual/")
-        print("\n📊 Generated visualizations:")
+        print("\n Analysis completed successfully!")
+        print(f" Results saved in: S001_imagined_vs_actual/")
+        print("\n Generated visualizations:")
         print("   - 01_overview_comparison.png (with baseline reference)")
         print("   - 02_lateralization_analysis.png") 
         print("   - 03_complexity_analysis.png")
@@ -47,7 +47,7 @@ def main():
         print("   - Enhanced statistical analysis")
         
     except Exception as e:
-        print(f"\n❌ Error during analysis: {e}")
+        print(f"\n(X) Error during analysis: {e}")
         logging.error(f"Analysis failed: {e}", exc_info=True)
         return 1
     
