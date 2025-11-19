@@ -16,15 +16,20 @@ def main():
                        help='Output directory name (default: group_imagined_vs_actual)')
     parser.add_argument('--data-path', type=str, default='raw_data',
                        help='Path to raw data directory (default: raw_data)')
+    parser.add_argument('--lateralization-method', type=str, default='band_power',
+                       choices=['band_power', 'amplitude'],
+                       help='Lateralization method: band_power (recommended) or amplitude (legacy)')
     
     args = parser.parse_args()
     
     print(f"Starting multi-subject analysis with {args.workers} workers...")
     print(f"Data path: {args.data_path}")
     print(f"Output directory: {args.output}")
+    print(f"Lateralization method: {args.lateralization_method}")
     
     # Create analyzer instance
-    analyzer = MultiSubjectAnalyzer(base_path=args.data_path, output_dir=args.output)
+    analyzer = MultiSubjectAnalyzer(base_path=args.data_path, output_dir=args.output,
+                                   lateralization_method=args.lateralization_method)
     
     # Run the pipeline
     analyzer.run_full_pipeline(max_workers=args.workers)

@@ -1,0 +1,35 @@
+======================================================================
+QUICK CRITICAL ANALYSIS SUMMARY
+======================================================================
+
+HYPOTHESIS TEST RESULT
+--------------------------------------------------
+Research Question: Does real/imagined similarity predict BCI compatibility?
+
+Sample size: 109 subjects
+Correlation: r = -0.031
+Significance: p = 0.7476 (not significant)
+R-squared: 0.001 (0.1% variance explained)
+
+VERDICT: ⚠ HYPOTHESIS NOT SUPPORTED
+No significant correlation between similarity and BCI performance.
+
+
+BCI PERFORMANCE STATISTICS
+--------------------------------------------------
+Mean accuracy: 73.4% ± 4.3%
+Median accuracy: 73.5%
+Range: 64.6% - 90.9%
+
+BCI-compatible (>70%): 91 (83.5%)
+BCI-incompatible (<60%): 0 (0.0%)
+
+
+RECOMMENDATIONS
+--------------------------------------------------
+1. Your similarity metric may not be the right biomarker
+2. Try other features: beta power, lateralization, SNR
+3. Consider multivariate approach (multiple features)
+4. Investigate individual good/poor performers for patterns
+
+======================================================================

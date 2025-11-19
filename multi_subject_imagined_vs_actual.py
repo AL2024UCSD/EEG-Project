@@ -50,11 +50,24 @@ logger = logging.getLogger(__name__)
 class SubjectDataExtractor(ImaginedVsActualAnalyzer):
     """Extended analyzer that extracts and returns data instead of just plotting."""
     
-    def __init__(self, subject_id: str = 'S001', base_path: str = 'raw_data'):
-        """Initialize without creating output directories."""
+    def __init__(self, subject_id: str = 'S001', base_path: str = 'raw_data', 
+                 lateralization_method: str = 'band_power'):
+        """
+        Initialize without creating output directories.
+        
+        Parameters:
+        -----------
+        subject_id : str
+            Subject identifier
+        base_path : str
+            Base path to data directory
+        lateralization_method : str
+            Method for lateralization calculation: 'band_power' (recommended) or 'amplitude' (legacy)
+        """
         # Don't call super().__init__() to avoid creating individual subject folders
         self.subject_id = subject_id
         self.base_path = Path(base_path) / subject_id
+        self.lateralization_method = lateralization_method
         
         # Copy necessary attributes from parent class
         self.channels = ['C3', 'C4', 'Cz', 'FC1', 'FC2', 'CP1', 'CP2']
@@ -127,7 +140,10 @@ class SubjectDataExtractor(ImaginedVsActualAnalyzer):
             self.extracted_data['band_powers'] = self._extract_band_power_features()
             
             # Extract lateralization features
-            self.extracted_data['lateralization'] = self._extract_lateralization_features()
+            if self.lateralization_method == 'band_power':
+                self.extracted_data['lateralization'] = self._extract_lateralization_features_band_power()
+            else:
+                self.extracted_data['lateralization'] = self._extract_lateralization_features()
             
             # Extract temporal dynamics
             self.extracted_data['temporal'] = self._extract_temporal_features()
@@ -421,6 +437,119 @@ class SubjectDataExtractor(ImaginedVsActualAnalyzer):
             
         return features
     
+    def _extract_lateralization_features_band_power(self) -> Dict:
+        """Extract lateralization features using band power (RECOMMENDED for motor tasks)."""
+        features = {
+            'left_fist': {'real': {'c3': None, 'c4': None}, 'imagined': {'c3': None, 'c4': None}},
+            'right_fist': {'real': {'c3': None, 'c4': None}, 'imagined': {'c3': None, 'c4': None}},
+            'lateralization_index': {'real': {'left': None, 'right': None}, 
+                                   'imagined': {'left': None, 'right': None}}
+        }
+        
+        # Get left/right fist data
+        left_real = []
+        left_imag = []
+        right_real = []
+        right_imag = []
+        
+        for key, data in self.data.items():
+            if 'pair_info' in data and data['pair_info']['type'] == 'fist':
+                epochs = data['epochs']
+                event_dict = data['event_dict']
+                
+                if 'T1' in event_dict and 'T2' in event_dict:
+                    left_epochs = epochs['T1']
+                    right_epochs = epochs['T2']
+                    
+                    if 'real' in key:
+                        left_real.append(left_epochs)
+                        right_real.append(right_epochs)
+                    else:
+                        left_imag.append(left_epochs)
+                        right_imag.append(right_epochs)
+        
+        if left_real and right_real and 'C3' in left_real[0].ch_names and 'C4' in left_real[0].ch_names:
+            # Concatenate epochs
+            left_real_all = mne.concatenate_epochs(left_real)
+            right_real_all = mne.concatenate_epochs(right_real)
+            left_imag_all = mne.concatenate_epochs(left_imag) if left_imag else None
+            right_imag_all = mne.concatenate_epochs(right_imag) if right_imag else None
+            
+            # Extract C3/C4 indices
+            c3_idx = left_real_all.ch_names.index('C3')
+            c4_idx = left_real_all.ch_names.index('C4')
+            
+            # Frequency bands for motor lateralization
+            bands = {
+                'mu': (8, 13),      # Mu rhythm (motor cortex)
+                'beta': (13, 30)    # Beta band (motor cortex)
+            }
+            
+            # Process each condition
+            for condition_name, epochs_data in [
+                ('real', {'left': left_real_all, 'right': right_real_all}),
+                ('imagined', {'left': left_imag_all, 'right': right_imag_all})
+            ]:
+                if epochs_data['left'] is None or epochs_data['right'] is None:
+                    continue
+                
+                for hand, epochs in epochs_data.items():
+                    if epochs is None or len(epochs) == 0:
+                        continue
+                    
+                    # Compute time-frequency representation using Morlet wavelets
+                    # This gives us frequency-specific power over time
+                    freqs = np.arange(8, 31, 1)  # Cover mu and beta bands
+                    
+                    try:
+                        power = mne.time_frequency.tfr_morlet(
+                            epochs, freqs=freqs, n_cycles=freqs/2,
+                            use_fft=True, return_itc=False, average=False,
+                            n_jobs=1, verbose=False
+                        )
+                        
+                        # Extract mu (8-13 Hz) and beta (13-30 Hz) power
+                        mu_freqs = (freqs >= 8) & (freqs <= 13)
+                        beta_freqs = (freqs >= 13) & (freqs <= 30)
+                        
+                        # Get power for C3 and C4: [epochs, freqs, times]
+                        c3_power = power.data[:, c3_idx, :, :]
+                        c4_power = power.data[:, c4_idx, :, :]
+                        
+                        # Average across epochs and frequency bands to get time series
+                        c3_mu = c3_power[:, mu_freqs, :].mean(axis=(0, 1))  # [times]
+                        c4_mu = c4_power[:, mu_freqs, :].mean(axis=(0, 1))
+                        c3_beta = c3_power[:, beta_freqs, :].mean(axis=(0, 1))
+                        c4_beta = c4_power[:, beta_freqs, :].mean(axis=(0, 1))
+                        
+                        # Calculate lateralization index for mu and beta
+                        li_mu = (c3_mu - c4_mu) / (c3_mu + c4_mu + 1e-10)
+                        li_beta = (c3_beta - c4_beta) / (c3_beta + c4_beta + 1e-10)
+                        
+                        # Combined lateralization (weighted average: mu is more important)
+                        li_combined = 0.6 * li_mu + 0.4 * li_beta
+                        
+                        # Store combined lateralization (compatible with existing plotting code)
+                        if hand == 'left':
+                            features['lateralization_index'][condition_name]['left'] = li_combined
+                        else:
+                            features['lateralization_index'][condition_name]['right'] = li_combined
+                        
+                        # Store time axis from first calculation
+                        if features['times'] is None:
+                            features['times'] = power.times
+                            
+                    except Exception as e:
+                        logger.warning(f"Failed to compute band power lateralization for {condition_name} {hand}: {e}")
+                        # Fall back to amplitude method for this condition
+                        continue
+            
+            # If band power method failed, ensure times are set
+            if features['times'] is None and left_real_all is not None:
+                features['times'] = left_real_all.times
+            
+        return features
+    
     def _extract_temporal_features(self) -> Dict:
         """Extract temporal dynamics features."""
         time_windows = [
@@ -474,10 +603,24 @@ class SubjectDataExtractor(ImaginedVsActualAnalyzer):
 class MultiSubjectAnalyzer:
     """Analyze multiple subjects and create group-level visualizations."""
     
-    def __init__(self, base_path: str = 'raw_data', output_dir: str = 'group_imagined_vs_actual'):
+    def __init__(self, base_path: str = 'raw_data', output_dir: str = 'group_imagined_vs_actual',
+                 lateralization_method: str = 'band_power'):
+        """
+        Initialize multi-subject analyzer.
+        
+        Parameters:
+        -----------
+        base_path : str
+            Path to directory containing subject data
+        output_dir : str
+            Output directory for results
+        lateralization_method : str
+            Method for lateralization: 'band_power' (recommended) or 'amplitude' (legacy)
+        """
         self.base_path = Path(base_path)
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True)
+        self.lateralization_method = lateralization_method
         
         # Data storage
         self.subject_data = {}
@@ -488,7 +631,8 @@ class MultiSubjectAnalyzer:
         """Process a single subject and return extracted features."""
         logger.info(f"Processing {subject_id}...")
         # Pass the base_path directly, not its parent
-        extractor = SubjectDataExtractor(subject_id, str(self.base_path))
+        extractor = SubjectDataExtractor(subject_id, str(self.base_path), 
+                                         lateralization_method=self.lateralization_method)
         return extractor.extract_all_features()
     
     def process_all_subjects(self, max_workers: int = 4):
@@ -567,7 +711,7 @@ class MultiSubjectAnalyzer:
             'timefreq': {'fist': {'real': [], 'imagined': []}, 'fists_feet': {'real': [], 'imagined': []}},
             'band_powers': {band: {'real': [], 'imagined': [], 'baseline_open': [], 'baseline_closed': []} 
                            for band in ['theta', 'alpha', 'beta']},
-            'lateralization': {'real': {'left': [], 'right': []}, 'imagined': {'left': [], 'right': []}},
+            'lateralization': {'real': {'left': [], 'right': []}, 'imagined': {'left': [], 'right': []}, 'times': None},
             'temporal': {},
             'n_subjects': len(self.subject_data)
         }
@@ -640,6 +784,9 @@ class MultiSubjectAnalyzer:
                 if lat['lateralization_index']['imagined']['right'] is not None:
                     self.aggregated_data['lateralization']['imagined']['right'].append(
                         lat['lateralization_index']['imagined']['right'])
+                # Store times from first subject (should be consistent across subjects)
+                if self.aggregated_data['lateralization']['times'] is None and 'times' in lat:
+                    self.aggregated_data['lateralization']['times'] = lat['times']
         
         logger.info(f"Aggregated data from {self.aggregated_data['n_subjects']} subjects")
     
@@ -990,8 +1137,23 @@ class MultiSubjectAnalyzer:
         
         # Calculate means and SEMs for lateralization indices
         if left_real_filtered and right_real_filtered:
-            # Get time axis from first subject
-            times = np.linspace(-1, 3, len(left_real_filtered[0]))
+            # Get time axis from stored times or infer from data length
+            if self.aggregated_data['lateralization']['times'] is not None:
+                # Use actual epoch times (should be -1 to 4 seconds based on epoch creation)
+                times = self.aggregated_data['lateralization']['times']
+                # Ensure times match data length (in case of filtering)
+                if len(times) != len(left_real_filtered[0]):
+                    # Interpolate or crop times to match filtered data length
+                    if len(times) > len(left_real_filtered[0]):
+                        # Crop times if data was filtered shorter
+                        times = times[:len(left_real_filtered[0])]
+                    else:
+                        # Extend times if needed (shouldn't happen, but handle gracefully)
+                        times = np.linspace(times[0], times[-1], len(left_real_filtered[0]))
+            else:
+                # Fallback: infer from data length (epochs are -1 to 4 seconds)
+                # Assuming sampling rate gives us the correct time range
+                times = np.linspace(-1.0, 4.0, len(left_real_filtered[0]))
             
             # Real movement
             left_real_mean = np.mean(left_real_filtered, axis=0)
@@ -1013,7 +1175,8 @@ class MultiSubjectAnalyzer:
             ax.set_title('Actual Movement', fontweight='bold')
             ax.legend()
             ax.grid(True, alpha=0.3)
-            ax.set_xlim(-0.5, 3)
+            # Set xlim to match actual data range (epochs are -1 to 4, but show -0.5 to 3 for consistency with other plots)
+            ax.set_xlim(max(times[0], -0.5), min(times[-1], 3.0))
             
             # Imagined movement - check if we have filtered data
             if left_imag_filtered and right_imag_filtered:
@@ -1038,7 +1201,8 @@ class MultiSubjectAnalyzer:
                 ax.set_title('Imagined Movement', fontweight='bold')
                 ax.legend()
                 ax.grid(True, alpha=0.3)
-                ax.set_xlim(-0.5, 3)
+                # Set xlim to match actual data range (epochs are -1 to 4, but show -0.5 to 3 for consistency with other plots)
+                ax.set_xlim(max(times[0], -0.5), min(times[-1], 3.0))
         
         plt.tight_layout()
         output_path = self.output_dir / '05_group_lateralization_analysis.png'
