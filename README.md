@@ -1,124 +1,13 @@
-# EEG Motor Imagery Analysis
+# EEG-Project : Imagined vs Actual Movement Analysis
 
 **Author:** Shaheer Khan , Daniel Mansperger, Andrew Li  
 **Date:** October 2025
 
 ## What This Does
-
+This pipeline processes EEG data from multiple subjects to compare imagined vs actual movement patterns, providing group-level statistics and visualizations.
 Analyzes EEG brain signals to compare actual hand/foot movements versus imagined movements. The script processes data from the PhysioNet Motor Movement/Imagery Database and generates visualizations showing brain activity patterns.
 
 **Main finding:** Imagined movements produce similar brain patterns to actual movements, just with smaller amplitude (~60-70%).
-
-## Requirements
-
-### Python Packages
-```bash
-pip install numpy matplotlib seaborn mne scipy pandas
-```
-
-### Data
-Download EEG data from PhysioNet: https://physionet.org/content/eegmmidb/1.0.0/
-
-Place data in this structure:
-```
-raw_data/
-  S001/
-    S001R01.edf  # Eyes open baseline
-    S001R02.edf  # Eyes closed baseline
-    S001R03.edf  # Left/Right fist (actual)
-    S001R04.edf  # Left/Right fist (imagined)
-    ... (through S001R14.edf)
-```
-
-## Usage
-
-```bash
-python imagined_vs_actual_analysis.py
-```
-
-Runtime: ~30 seconds - 1 min
-
-## Outputs
-
-All files saved to `S001_imagined_vs_actual/`:
-
-### 1. `01_overview_comparison.png`
-- Power spectrum showing frequency content (with baseline comparison)
-- Channel amplitudes across motor cortex
-- Time-frequency maps (ERD/ERS)
-- Statistical comparison table
-
-### 2. `02_lateralization_analysis.png`
-- Left vs right hand activity
-- Shows contralateral motor control (left hand = right brain)
-- Lateralization index plots
-
-### 3. `03_complexity_analysis.png`
-- Single limb vs dual limb movements
-- Beta power comparison
-- Inter-hemispheric coherence
-
-### 4. `04_temporal_dynamics.png`
-- Brain activity across three time windows:
-  - Pre-movement (-1 to 0s)
-  - Early movement (0 to 1s)
-  - Sustained movement (1 to 3s)
-- Theta, alpha, and beta band power
-
-### 5. `ANALYSIS_SUMMARY.txt`
-- Text report with key metrics
-- Statistical results
-- Percentage changes from baseline
-
-## Quick Customization
-
-**Analyze different subject:**
-```python
-analyzer = ImaginedVsActualAnalyzer(subject_id='S002')
-```
-
-**Change channels:**
-```python
-self.channels = ['C3', 'C4', 'Cz']  # Just primary motor cortex
-```
-
-**Adjust filters:**
-```python
-raw.filter(0.5, 40, ...)  # 0.5-40 Hz bandpass
-```
-
-## Troubleshooting
-
-**"FileNotFoundError"** → Check data path is `raw_data/S001/`
-
-**"No motor channels found"** → Update `self.channels` list to match your data
-
-**Memory errors** → Close other programs, reduce number of epochs
-
-**MNE import error** → Try `conda install -c conda-forge mne`
-
-## References
-
-- **Dataset:** Schalk et al. (2004), PhysioNet EEG Motor Movement/Imagery Database
-- **Processing:** MNE-Python (Gramfort et al., 2013)
-- **Theory:** Pfurtscheller & Lopes da Silva (1999), Event-related EEG synchronization
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# EEG-Project : Imagined vs Actual Movement Analysis Pipeline (Coming Soon) 
-
-This pipeline processes EEG data from multiple subjects to compare imagined vs actual movement patterns, providing group-level statistics and visualizations.
 
 ## Overview
 
@@ -157,7 +46,7 @@ The pipeline extends the single-subject analysis to process all 109 subjects pro
 from multi_subject_imagined_vs_actual import MultiSubjectAnalyzer
 
 # Create analyzer
-analyzer = MultiSubjectAnalyzer(base_path='raw_data', output_dir='results')
+analyzer = MultiSubjectAnalyzer(base_path='set-eeg-motor-imagery-raw-data', output_dir='results')
 
 # Run full pipeline
 analyzer.run_full_pipeline(max_workers=4)
