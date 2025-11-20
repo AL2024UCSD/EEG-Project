@@ -50,7 +50,7 @@ logger = logging.getLogger(__name__)
 class SubjectDataExtractor(ImaginedVsActualAnalyzer):
     """Extended analyzer that extracts and returns data instead of just plotting."""
     
-    def __init__(self, subject_id: str = 'S001', base_path: str = 'raw_data', 
+    def __init__(self, subject_id: str = 'S001', base_path: str = '/Users/shaheerkhan/Documents/EEG-Project/eeg-motor-movementimagery-dataset-1.0.0/files', 
                  lateralization_method: str = 'band_power'):
         """
         Initialize without creating output directories.
@@ -438,117 +438,122 @@ class SubjectDataExtractor(ImaginedVsActualAnalyzer):
         return features
     
     def _extract_lateralization_features_band_power(self) -> Dict:
-        """Extract lateralization features using band power (RECOMMENDED for motor tasks)."""
+        """Extract lateralization features using band power"""
         features = {
             'left_fist': {'real': {'c3': None, 'c4': None}, 'imagined': {'c3': None, 'c4': None}},
             'right_fist': {'real': {'c3': None, 'c4': None}, 'imagined': {'c3': None, 'c4': None}},
-            'lateralization_index': {'real': {'left': None, 'right': None}, 
-                                   'imagined': {'left': None, 'right': None}}
+            'lateralization_index': {
+                'real': {'left': None, 'right': None},
+                'imagined': {'left': None, 'right': None},
+            },
+            'times': None,
         }
-        
+
         # Get left/right fist data
         left_real = []
         left_imag = []
         right_real = []
         right_imag = []
-        
+
         for key, data in self.data.items():
             if 'pair_info' in data and data['pair_info']['type'] == 'fist':
                 epochs = data['epochs']
                 event_dict = data['event_dict']
-                
+
                 if 'T1' in event_dict and 'T2' in event_dict:
                     left_epochs = epochs['T1']
                     right_epochs = epochs['T2']
-                    
+
                     if 'real' in key:
                         left_real.append(left_epochs)
                         right_real.append(right_epochs)
                     else:
                         left_imag.append(left_epochs)
                         right_imag.append(right_epochs)
-        
+
+        # Only proceed if we have usable fist data
         if left_real and right_real and 'C3' in left_real[0].ch_names and 'C4' in left_real[0].ch_names:
-            # Concatenate epochs
+            # Concatenate epochs across runs
             left_real_all = mne.concatenate_epochs(left_real)
             right_real_all = mne.concatenate_epochs(right_real)
             left_imag_all = mne.concatenate_epochs(left_imag) if left_imag else None
             right_imag_all = mne.concatenate_epochs(right_imag) if right_imag else None
-            
-            # Extract C3/C4 indices
+
+            # Channel indices
             c3_idx = left_real_all.ch_names.index('C3')
             c4_idx = left_real_all.ch_names.index('C4')
-            
-            # Frequency bands for motor lateralization
-            bands = {
-                'mu': (8, 13),      # Mu rhythm (motor cortex)
-                'beta': (13, 30)    # Beta band (motor cortex)
-            }
-            
-            # Process each condition
+
+            # Process each condition (real vs imagined)
             for condition_name, epochs_data in [
                 ('real', {'left': left_real_all, 'right': right_real_all}),
-                ('imagined', {'left': left_imag_all, 'right': right_imag_all})
+                ('imagined', {'left': left_imag_all, 'right': right_imag_all}),
             ]:
                 if epochs_data['left'] is None or epochs_data['right'] is None:
                     continue
-                
+
                 for hand, epochs in epochs_data.items():
                     if epochs is None or len(epochs) == 0:
                         continue
-                    
-                    # Compute time-frequency representation using Morlet wavelets
-                    # This gives us frequency-specific power over time
-                    freqs = np.arange(8, 31, 1)  # Cover mu and beta bands
-                    
+
+                    # Frequencies covering mu + beta
+                    freqs = np.arange(8, 31, 1)
+
                     try:
-                        power = mne.time_frequency.tfr_morlet(
-                            epochs, freqs=freqs, n_cycles=freqs/2,
-                            use_fft=True, return_itc=False, average=False,
-                            n_jobs=1, verbose=False
+                        # Use modern API instead of legacy tfr_morlet()
+                        power = epochs.compute_tfr(
+                            method="morlet",
+                            freqs=freqs,
+                            n_cycles=freqs / 2,
+                            return_itc=False,
+                            average=False,
+                            verbose=False,
                         )
-                        
-                        # Extract mu (8-13 Hz) and beta (13-30 Hz) power
+                        # power.data: [n_epochs, n_channels, n_freqs, n_times]
+
+                        # Mu (8–13 Hz) and beta (13–30 Hz) masks
                         mu_freqs = (freqs >= 8) & (freqs <= 13)
                         beta_freqs = (freqs >= 13) & (freqs <= 30)
-                        
-                        # Get power for C3 and C4: [epochs, freqs, times]
+
+                        # Extract C3/C4 power: [epochs, freqs, times]
                         c3_power = power.data[:, c3_idx, :, :]
                         c4_power = power.data[:, c4_idx, :, :]
-                        
-                        # Average across epochs and frequency bands to get time series
-                        c3_mu = c3_power[:, mu_freqs, :].mean(axis=(0, 1))  # [times]
+
+                        # Average across epochs and frequency bands → time series
+                        c3_mu = c3_power[:, mu_freqs, :].mean(axis=(0, 1))   # [times]
                         c4_mu = c4_power[:, mu_freqs, :].mean(axis=(0, 1))
                         c3_beta = c3_power[:, beta_freqs, :].mean(axis=(0, 1))
                         c4_beta = c4_power[:, beta_freqs, :].mean(axis=(0, 1))
-                        
-                        # Calculate lateralization index for mu and beta
+
+                        # Lateralization indices
                         li_mu = (c3_mu - c4_mu) / (c3_mu + c4_mu + 1e-10)
                         li_beta = (c3_beta - c4_beta) / (c3_beta + c4_beta + 1e-10)
-                        
-                        # Combined lateralization (weighted average: mu is more important)
+
+                        # Combined LI (mu weighted more heavily)
                         li_combined = 0.6 * li_mu + 0.4 * li_beta
-                        
-                        # Store combined lateralization (compatible with existing plotting code)
+
+                        # Store combined LI for this condition + hand
                         if hand == 'left':
                             features['lateralization_index'][condition_name]['left'] = li_combined
                         else:
                             features['lateralization_index'][condition_name]['right'] = li_combined
-                        
-                        # Store time axis from first calculation
+
+                        # Store time axis once
                         if features['times'] is None:
                             features['times'] = power.times
-                            
+
                     except Exception as e:
-                        logger.warning(f"Failed to compute band power lateralization for {condition_name} {hand}: {e}")
-                        # Fall back to amplitude method for this condition
+                        logger.warning(
+                            f"Failed to compute band power lateralization for {condition_name} {hand}: {e}"
+                        )
+                        # This condition will fall back to being ignored in group stats
                         continue
-            
-            # If band power method failed, ensure times are set
+
+            # If band-power failed entirely but we have ERPs, fall back on epoch times
             if features['times'] is None and left_real_all is not None:
                 features['times'] = left_real_all.times
-            
+
         return features
+
     
     def _extract_temporal_features(self) -> Dict:
         """Extract temporal dynamics features."""
@@ -603,7 +608,7 @@ class SubjectDataExtractor(ImaginedVsActualAnalyzer):
 class MultiSubjectAnalyzer:
     """Analyze multiple subjects and create group-level visualizations."""
     
-    def __init__(self, base_path: str = 'raw_data', output_dir: str = 'group_imagined_vs_actual',
+    def __init__(self, base_path: str = '/Users/shaheerkhan/Documents/EEG-Project/eeg-motor-movementimagery-dataset-1.0.0/files', output_dir: str = 'group_imagined_vs_actual',
                  lateralization_method: str = 'band_power'):
         """
         Initialize multi-subject analyzer.
@@ -1125,49 +1130,66 @@ class MultiSubjectAnalyzer:
         logger.info(f"  ✓ Saved: {output_path}")
     
     def _plot_group_lateralization_analysis(self):
-        """Plot group lateralization analysis."""
-        fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+        """Plot group lateralization analysis with shared y-axis scale."""
+        # sharey=True ensures the same y-axis across both subplots
+        fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharey=True)
         fig.suptitle('Group Lateralization Analysis', fontsize=16, fontweight='bold')
         
         # Filter to common lengths
-        left_real_filtered = self._filter_to_common_length(self.aggregated_data['lateralization']['real']['left'])
-        right_real_filtered = self._filter_to_common_length(self.aggregated_data['lateralization']['real']['right'])
-        left_imag_filtered = self._filter_to_common_length(self.aggregated_data['lateralization']['imagined']['left'])
-        right_imag_filtered = self._filter_to_common_length(self.aggregated_data['lateralization']['imagined']['right'])
+        left_real_filtered = self._filter_to_common_length(
+            self.aggregated_data['lateralization']['real']['left']
+        )
+        right_real_filtered = self._filter_to_common_length(
+            self.aggregated_data['lateralization']['real']['right']
+        )
+        left_imag_filtered = self._filter_to_common_length(
+            self.aggregated_data['lateralization']['imagined']['left']
+        )
+        right_imag_filtered = self._filter_to_common_length(
+            self.aggregated_data['lateralization']['imagined']['right']
+        )
         
-        # Calculate means and SEMs for lateralization indices
+        # Only proceed if we have real data
         if left_real_filtered and right_real_filtered:
-            # Get time axis from stored times or infer from data length
-            if self.aggregated_data['lateralization']['times'] is not None:
-                # Use actual epoch times (should be -1 to 4 seconds based on epoch creation)
-                times = self.aggregated_data['lateralization']['times']
-                # Ensure times match data length (in case of filtering)
-                if len(times) != len(left_real_filtered[0]):
-                    # Interpolate or crop times to match filtered data length
-                    if len(times) > len(left_real_filtered[0]):
-                        # Crop times if data was filtered shorter
-                        times = times[:len(left_real_filtered[0])]
-                    else:
-                        # Extend times if needed (shouldn't happen, but handle gracefully)
-                        times = np.linspace(times[0], times[-1], len(left_real_filtered[0]))
-            else:
-                # Fallback: infer from data length (epochs are -1 to 4 seconds)
-                # Assuming sampling rate gives us the correct time range
-                times = np.linspace(-1.0, 4.0, len(left_real_filtered[0]))
+            # Time axis (assumes -1 to 3 s, adjust if your window is different)
+            times = np.linspace(-1, 3, len(left_real_filtered[0]))
             
-            # Real movement
+            # Compute global y-limits across ALL conditions (real + imagined)
+            all_arrays = []
+            all_arrays.extend(left_real_filtered)
+            all_arrays.extend(right_real_filtered)
+            all_arrays.extend(left_imag_filtered)
+            all_arrays.extend(right_imag_filtered)
+            
+            ylim = None
+            if all_arrays:
+                all_vals = np.concatenate(all_arrays)
+                if np.any(np.isfinite(all_vals)):
+                    max_abs = np.nanmax(np.abs(all_vals))
+                    # Pad a bit so traces aren’t touching the border
+                    ylim = max_abs * 1.1 if max_abs > 0 else None
+            
+            # ----- Actual movement -----
             left_real_mean = np.mean(left_real_filtered, axis=0)
             left_real_sem = stats.sem(left_real_filtered, axis=0)
             right_real_mean = np.mean(right_real_filtered, axis=0)
             right_real_sem = stats.sem(right_real_filtered, axis=0)
             
             ax = axes[0]
-            ax.plot(times, left_real_mean, color=COLORS['left_fist'], linewidth=2, label='Left Fist')
-            ax.fill_between(times, left_real_mean-left_real_sem, left_real_mean+left_real_sem,
-                           alpha=0.3, color=COLORS['left_fist'])
-            ax.plot(times, right_real_mean, color=COLORS['right_fist'], linewidth=2, label='Right Fist')
-            ax.fill_between(times, right_real_mean-right_real_sem, right_real_mean+right_real_sem,
-                           alpha=0.3, color=COLORS['right_fist'])
+            ax.plot(times, left_real_mean, color=COLORS['left_fist'],
+                    linewidth=2, label='Left Fist')
+            ax.fill_between(times,
+                            left_real_mean - left_real_sem,
+                            left_real_mean + left_real_sem,
+                            alpha=0.3, color=COLORS['left_fist'])
+            
+            ax.plot(times, right_real_mean, color=COLORS['right_fist'],
+                    linewidth=2, label='Right Fist')
+            ax.fill_between(times,
+                            right_real_mean - right_real_sem,
+                            right_real_mean + right_real_sem,
+                            alpha=0.3, color=COLORS['right_fist'])
+            
             ax.axhline(0, color='k', linestyle='-', alpha=0.3)
             ax.axvline(0, color='k', linestyle='--', alpha=0.5)
             ax.set_xlabel('Time (s)')
@@ -1175,10 +1197,9 @@ class MultiSubjectAnalyzer:
             ax.set_title('Actual Movement', fontweight='bold')
             ax.legend()
             ax.grid(True, alpha=0.3)
-            # Set xlim to match actual data range (epochs are -1 to 4, but show -0.5 to 3 for consistency with other plots)
-            ax.set_xlim(max(times[0], -0.5), min(times[-1], 3.0))
+            ax.set_xlim(-0.5, 3)
             
-            # Imagined movement - check if we have filtered data
+            # ----- Imagined movement -----
             if left_imag_filtered and right_imag_filtered:
                 left_imag_mean = np.mean(left_imag_filtered, axis=0)
                 left_imag_sem = stats.sem(left_imag_filtered, axis=0)
@@ -1186,29 +1207,39 @@ class MultiSubjectAnalyzer:
                 right_imag_sem = stats.sem(right_imag_filtered, axis=0)
                 
                 ax = axes[1]
-                ax.plot(times, left_imag_mean, color=COLORS['left_fist'], linewidth=2, 
-                       linestyle='--', label='Left Fist (Imagined)')
-                ax.fill_between(times, left_imag_mean-left_imag_sem, left_imag_mean+left_imag_sem,
-                               alpha=0.3, color=COLORS['left_fist'])
-                ax.plot(times, right_imag_mean, color=COLORS['right_fist'], linewidth=2,
-                       linestyle='--', label='Right Fist (Imagined)')
-                ax.fill_between(times, right_imag_mean-right_imag_sem, right_imag_mean+right_imag_sem,
-                               alpha=0.3, color=COLORS['right_fist'])
+                ax.plot(times, left_imag_mean, color=COLORS['left_fist'],
+                        linewidth=2, linestyle='--', label='Left Fist (Imagined)')
+                ax.fill_between(times,
+                                left_imag_mean - left_imag_sem,
+                                left_imag_mean + left_imag_sem,
+                                alpha=0.3, color=COLORS['left_fist'])
+                
+                ax.plot(times, right_imag_mean, color=COLORS['right_fist'],
+                        linewidth=2, linestyle='--', label='Right Fist (Imagined)')
+                ax.fill_between(times,
+                                right_imag_mean - right_imag_sem,
+                                right_imag_mean + right_imag_sem,
+                                alpha=0.3, color=COLORS['right_fist'])
+                
                 ax.axhline(0, color='k', linestyle='-', alpha=0.3)
                 ax.axvline(0, color='k', linestyle='--', alpha=0.5)
                 ax.set_xlabel('Time (s)')
-                ax.set_ylabel('Lateralization Index')
                 ax.set_title('Imagined Movement', fontweight='bold')
                 ax.legend()
                 ax.grid(True, alpha=0.3)
-                # Set xlim to match actual data range (epochs are -1 to 4, but show -0.5 to 3 for consistency with other plots)
-                ax.set_xlim(max(times[0], -0.5), min(times[-1], 3.0))
+                ax.set_xlim(-0.5, 3)
+            
+            # Apply the SAME y-limits to both plots if we could compute them
+            if ylim is not None:
+                for ax in axes:
+                    ax.set_ylim(-ylim, ylim)
         
         plt.tight_layout()
         output_path = self.output_dir / '05_group_lateralization_analysis.png'
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
         plt.close()
         logger.info(f"  ✓ Saved: {output_path}")
+
     
     def _plot_subject_variability_analysis(self):
         """Plot analysis of inter-subject variability."""
@@ -1389,13 +1420,6 @@ class MultiSubjectAnalyzer:
             f.write("   - Response pattern clustering\n")
             f.write("   - Processing success rates\n\n")
             
-            f.write("CLINICAL IMPLICATIONS\n")
-            f.write("-"*60 + "\n")
-            f.write("1. Motor imagery produces detectable but attenuated neural signatures\n")
-            f.write("2. Approximately 60-70% of actual movement amplitude preserved\n")
-            f.write("3. Spatial patterns (lateralization) well-preserved\n")
-            f.write("4. High inter-subject variability suggests need for calibration\n")
-            f.write("5. Both mu and beta bands show significant modulation\n\n")
             
             f.write("="*80 + "\n")
             f.write("Analysis complete. All visualizations saved to output directory.\n")

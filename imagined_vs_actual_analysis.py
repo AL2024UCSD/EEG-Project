@@ -203,17 +203,27 @@ class ImaginedVsActualAnalyzer:
             freqs = np.arange(4, 40, 1)
         
         # Compute time-frequency representation
-        power = mne.time_frequency.tfr_morlet(
-            epochs, freqs=freqs, n_cycles=freqs/2,
-            use_fft=True, return_itc=False, average=True,
-            n_jobs=1, verbose=False
+        # Returns an AverageTFR: shape [n_channels, n_frequencies, n_times]
+        power = epochs.compute_tfr(
+            method="morlet",
+            freqs=freqs,
+            n_cycles=freqs / 2,
+            return_itc=False,
+            average=True,
+            verbose=False,
         )
         
         # Baseline correction (percent change)
-        baseline_power = power.copy().crop(tmin=-1.0, tmax=0.0).data.mean(axis=-1, keepdims=True)
+        # Baseline window: -1.0 to 0.0 seconds relative to event
+        baseline_power = (
+            power.copy()
+                .crop(tmin=-1.0, tmax=0.0)
+                .data.mean(axis=-1, keepdims=True)
+        )
         erds = ((power.data - baseline_power) / baseline_power) * 100
         
         return power, erds
+
     
     def plot_overview_comparison(self):
         """Create overview plot comparing imagined vs actual movements."""
