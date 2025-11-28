@@ -2,7 +2,7 @@
 Comprehensive analysis comparing imagined vs actual movements in EEG data
 Creates high-resolution, visually appealing visualizations
 
-Author: Shaheer Khan
+Author: Shaheer Khan, Daniel Mansperger, Andrew Li
 Date: October 2025
 """
 
