@@ -382,7 +382,7 @@ class ImaginedVsActualAnalyzer:
                     epochs_data = data['epochs'].get_data()[:, ch_idx, :]
                     
                     # RMS amplitude during movement period (0-3s)
-                    movement_data = epochs_data[:, int(1*data['epochs'].info['sfreq']):int(3*data['epochs'].info['sfreq'])]
+                    movement_data = epochs_data[:, int(0*data['epochs'].info['sfreq']):int(3*data['epochs'].info['sfreq'])]
                     rms_amp = np.sqrt(np.mean(movement_data**2))
                     
                     if 'real' in key:
