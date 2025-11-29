@@ -332,22 +332,35 @@ class SubjectDataExtractor(ImaginedVsActualAnalyzer):
                         return_itc=False, average=False, verbose=False
                     )
                     
-                    # Average across frequencies and channels
-                    band_power_raw = power.data.mean(axis=1).mean(axis=1)  # (n_epochs, n_times)
+                    # Average across frequencies: shape (n_epochs, n_channels, n_times)
+                    power_data = power.data.mean(axis=2)
                     
-                    # Compute baseline power (average from -1 to 0 seconds)
+                    # Compute ERD/ERS for EACH CHANNEL separately to avoid averaging artifacts
+                    # This matches the approach used in lateralization analysis
                     baseline_mask = (power.times >= -1) & (power.times < 0)
-                    baseline_power = band_power_raw[:, baseline_mask].mean(axis=1, keepdims=True)
-                    
-                    # Compute ERD/ERS: percent change from baseline
-                    erds = ((band_power_raw - baseline_power) / baseline_power) * 100
-                    
-                    # Average across time (movement period: 0-3 seconds)
                     movement_mask = (power.times >= 0) & (power.times <= 3)
-                    erds_movement = erds[:, movement_mask].mean(axis=1)  # (n_epochs,)
                     
-                    # Average across epochs to get single value per subject
-                    erds_subject = erds_movement.mean()
+                    channel_erds_values = []
+                    for ch_idx in range(power_data.shape[1]):  # Loop over channels
+                        # Extract power for this channel: (n_epochs, n_times)
+                        ch_power = power_data[:, ch_idx, :]
+                        
+                        # Compute baseline for each epoch
+                        ch_baseline = ch_power[:, baseline_mask].mean(axis=1, keepdims=True)
+                        
+                        # Compute ERD/ERS for each epoch
+                        ch_erds = ((ch_power - ch_baseline) / ch_baseline) * 100
+                        
+                        # Average across movement period for each epoch
+                        ch_erds_movement = ch_erds[:, movement_mask].mean(axis=1)
+                        
+                        # Average across epochs for this channel
+                        ch_erds_avg = ch_erds_movement.mean()
+                        
+                        channel_erds_values.append(ch_erds_avg)
+                    
+                    # Average ERD/ERS across all channels
+                    erds_subject = np.mean(channel_erds_values)
                     
                     if 'real' in key:
                         features[band_name]['real'].append(erds_subject)
@@ -1018,25 +1031,74 @@ class MultiSubjectAnalyzer:
         
         # Plot 2: Statistical comparison table
         results = []
+        p_values = []  # Collect p-values for correction
+        
+        # First pass: compute all tests
         for band in bands:
             real_vals = self.aggregated_data['band_powers'][band]['real']
             imag_vals = self.aggregated_data['band_powers'][band]['imagined']
             
             # Paired t-test
             t_stat, p_val = stats.ttest_rel(real_vals[:len(imag_vals)], imag_vals[:len(real_vals)])
+            p_values.append(p_val)
             
             # Effect size (Cohen's d)
             diff = np.array(real_vals[:len(imag_vals)]) - np.array(imag_vals[:len(real_vals)])
             cohens_d = np.mean(diff) / np.std(diff) if np.std(diff) > 0 else 0
             
             results.append({
+                'band': band,
+                'real_vals': real_vals,
+                'imag_vals': imag_vals,
+                'p_uncorrected': p_val,
+                'cohens_d': cohens_d
+            })
+        
+        # Apply Holm-Bonferroni correction
+        from scipy.stats import false_discovery_control
+        # Sort p-values with their indices
+        sorted_indices = np.argsort(p_values)
+        n_tests = len(p_values)
+        corrected_significant = [False] * n_tests
+        
+        # Holm-Bonferroni sequential procedure
+        for rank, idx in enumerate(sorted_indices):
+            corrected_alpha = 0.05 / (n_tests - rank)
+            if p_values[idx] <= corrected_alpha:
+                corrected_significant[idx] = True
+            else:
+                break  # Stop when first non-significant test found
+        
+        # Second pass: create table with corrected results
+        final_results = []
+        for i, result in enumerate(results):
+            band = result['band']
+            real_vals = result['real_vals']
+            imag_vals = result['imag_vals']
+            p_val = result['p_uncorrected']
+            cohens_d = result['cohens_d']
+            
+            # Determine significance based on correction
+            if corrected_significant[i]:
+                if p_val < 0.001:
+                    sig = '***'
+                elif p_val < 0.01:
+                    sig = '**'
+                else:
+                    sig = '*'
+            else:
+                sig = 'ns'
+            
+            final_results.append({
                 'Band': band.capitalize(),
                 'Real Mean±SEM': f"{np.mean(real_vals):.2f}±{stats.sem(real_vals):.2f}",
                 'Imagined Mean±SEM': f"{np.mean(imag_vals):.2f}±{stats.sem(imag_vals):.2f}",
                 'p-value': f"{p_val:.4f}",
                 'Effect Size': f"{cohens_d:.3f}",
-                'Sig': '***' if p_val < 0.001 else '**' if p_val < 0.01 else '*' if p_val < 0.05 else 'ns'
+                'Sig': sig
             })
+        
+        results = final_results
         
         # Create table
         df = pd.DataFrame(results)
@@ -1257,33 +1319,59 @@ class MultiSubjectAnalyzer:
             
             # Key statistics
             f.write("1. Band Power Analysis (Mean ± SEM):\n")
-            for band in ['theta', 'mu', 'beta']:
+            
+            # First pass: collect all p-values for correction
+            bands_list = ['theta', 'mu', 'beta']
+            band_data = []
+            p_values_report = []
+            
+            for band in bands_list:
                 real_vals = [v * 1e12 for v in self.aggregated_data['band_powers'][band]['real']]
                 imag_vals = [v * 1e12 for v in self.aggregated_data['band_powers'][band]['imagined']]
+                
+                # Statistical test
+                t_stat, p_val = stats.ttest_rel(real_vals[:len(imag_vals)], imag_vals[:len(real_vals)])
+                p_values_report.append(p_val)
+                
+                band_data.append({
+                    'band': band,
+                    'real_vals': real_vals,
+                    'imag_vals': imag_vals,
+                    'p_val': p_val
+                })
+            
+            # Apply Holm-Bonferroni correction
+            sorted_indices_report = np.argsort(p_values_report)
+            n_tests_report = len(p_values_report)
+            corrected_sig_report = [False] * n_tests_report
+            
+            for rank, idx in enumerate(sorted_indices_report):
+                corrected_alpha_report = 0.05 / (n_tests_report - rank)
+                if p_values_report[idx] <= corrected_alpha_report:
+                    corrected_sig_report[idx] = True
+                else:
+                    break
+            
+            # Second pass: write results with corrected significance
+            for i, data in enumerate(band_data):
+                band = data['band']
+                real_vals = data['real_vals']
+                imag_vals = data['imag_vals']
+                p_val = data['p_val']
                 
                 f.write(f"\n   {band.capitalize()} Band:\n")
                 f.write(f"   - Actual: {np.mean(real_vals):.2f} ± {stats.sem(real_vals):.2f} pV²/Hz\n")
                 f.write(f"   - Imagined: {np.mean(imag_vals):.2f} ± {stats.sem(imag_vals):.2f} pV²/Hz\n")
                 
-                # Statistical test
-                t_stat, p_val = stats.ttest_rel(real_vals[:len(imag_vals)], imag_vals[:len(real_vals)])
+                # Use corrected significance
+                sig_marker = '*' if corrected_sig_report[i] else ''
                 f.write(f"   - Difference: {np.mean(real_vals) - np.mean(imag_vals):.2f} pV²/Hz ")
-                f.write(f"(p = {p_val:.4f}{'*' if p_val < 0.05 else ''})\n")
+                f.write(f"(p = {p_val:.4f}{sig_marker}, Holm-Bonferroni corrected)\n")
             
             f.write("\n2. Movement Detection Performance:\n")
             # Calculate average suppression
             mu_real = [v * 1e12 for v in self.aggregated_data['band_powers']['mu']['real']]
             mu_imag = [v * 1e12 for v in self.aggregated_data['band_powers']['mu']['imagined']]
-            
-            # if alpha_baseline_open:
-            #     baseline_mean = np.mean(alpha_baseline_open)
-            #     real_suppression = ((baseline_mean - np.mean(alpha_real)) / baseline_mean * 100)
-            #     imag_suppression = ((baseline_mean - np.mean(alpha_imag)) / baseline_mean * 100)
-                
-            #     f.write(f"   - Mu suppression (vs baseline):\n")
-            #     f.write(f"     * Actual movement: {real_suppression:.1f}%\n")
-            #     f.write(f"     * Imagined movement: {imag_suppression:.1f}%\n")
-            #     f.write(f"   - Suppression ratio (Imagined/Actual): {imag_suppression/real_suppression:.2f}\n")
             
             f.write("\n3. Inter-Subject Variability:\n")
             cv_real = np.std(mu_real) / np.mean(mu_real) * 100
