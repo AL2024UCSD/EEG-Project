@@ -698,20 +698,29 @@ class ImaginedVsActualAnalyzer:
             epochs1, freqs=freqs, n_cycles=n_cycles, 
             return_itc=False, average=False, verbose=False
         )
-        band_power1 = power1.data[:, ch_idx, :, :].mean(axis=1)  # Average across frequencies
+        
+        band_power1_raw = power1.data[:, ch_idx, :, :].mean(axis=1)  # Average across frequencies
+        # Compute ERD/ERS for epochs1
+        baseline_mask = (power1.times >= -1) & (power1.times < 0)
+        baseline1 = band_power1_raw[:, baseline_mask].mean(axis=1, keepdims=True)
+        band_power1_erds = ((band_power1_raw - baseline1) / baseline1) * 100
         
         # Compute power for epochs2
         power2 = mne.time_frequency.tfr_morlet(
             epochs2, freqs=freqs, n_cycles=n_cycles, 
             return_itc=False, average=False, verbose=False
         )
-        band_power2 = power2.data[:, ch_idx, :, :].mean(axis=1)  # Average across frequencies
+        band_power2_raw = power2.data[:, ch_idx, :, :].mean(axis=1)  # Average across frequencies
+        # Compute ERD/ERS for epochs2
+        baseline_mask = (power2.times >= -1) & (power2.times < 0)
+        baseline2 = band_power2_raw[:, baseline_mask].mean(axis=1, keepdims=True)
+        band_power2_erds = ((band_power2_raw - baseline2) / baseline2) * 100
         
-        # Compute mean and SEM across epochs
-        mean1 = band_power1.mean(axis=0) * 1e12  # Convert to pV²/Hz
-        sem1 = stats.sem(band_power1, axis=0) * 1e12
-        mean2 = band_power2.mean(axis=0) * 1e12
-        sem2 = stats.sem(band_power2, axis=0) * 1e12
+        # Compute mean and SEM across epochs (ERD/ERS already in percent)
+        mean1 = band_power1_erds.mean(axis=0)
+        sem1 = stats.sem(band_power1_erds, axis=0)
+        mean2 = band_power2_erds.mean(axis=0)
+        sem2 = stats.sem(band_power2_erds, axis=0)
         
         times = epochs1.times
         
@@ -726,7 +735,7 @@ class ImaginedVsActualAnalyzer:
         ax.axhline(0, color='k', linestyle='-', alpha=0.3)
         
         ax.set_xlabel('Time (s)')
-        ax.set_ylabel('Band Power (pV²/Hz)')
+        ax.set_ylabel('ERD/ERS (%)')
         ax.set_title(title, fontweight='bold')
         ax.legend()
         ax.grid(True, alpha=0.3)
@@ -747,39 +756,63 @@ class ImaginedVsActualAnalyzer:
                 left_real, freqs=freqs, n_cycles=n_cycles,
                 return_itc=False, average=False, verbose=False
             )
-            left_real_c3 = power_left_real.data[:, c3_idx, :, :].mean(axis=1)  # Average across frequencies
-            left_real_c4 = power_left_real.data[:, c4_idx, :, :].mean(axis=1)
-            
+            left_real_c3_raw = power_left_real.data[:, c3_idx, :, :].mean(axis=1)  # Average across frequencies
+            left_real_c4_raw = power_left_real.data[:, c4_idx, :, :].mean(axis=1)
+            # Compute ERD/ERS (baseline correction)
+            baseline_mask = (power_left_real.times >= -1) & (power_left_real.times < 0)
+            left_real_c3_baseline = left_real_c3_raw[:, baseline_mask].mean(axis=1, keepdims=True)
+            left_real_c4_baseline = left_real_c4_raw[:, baseline_mask].mean(axis=1, keepdims=True)
+            left_real_c3 = ((left_real_c3_raw - left_real_c3_baseline) / left_real_c3_baseline) * 100
+            left_real_c4 = ((left_real_c4_raw - left_real_c4_baseline) / left_real_c4_baseline) * 100
+
             # Real movement - right fist
             power_right_real = mne.time_frequency.tfr_morlet(
                 right_real, freqs=freqs, n_cycles=n_cycles,
                 return_itc=False, average=False, verbose=False
             )
-            right_real_c3 = power_right_real.data[:, c3_idx, :, :].mean(axis=1)
-            right_real_c4 = power_right_real.data[:, c4_idx, :, :].mean(axis=1)
+            right_real_c3_raw = power_right_real.data[:, c3_idx, :, :].mean(axis=1)
+            right_real_c4_raw = power_right_real.data[:, c4_idx, :, :].mean(axis=1)
+            # Compute ERD/ERS
+            baseline_mask = (power_right_real.times >= -1) & (power_right_real.times < 0)
+            right_real_c3_baseline = right_real_c3_raw[:, baseline_mask].mean(axis=1, keepdims=True)
+            right_real_c4_baseline = right_real_c4_raw[:, baseline_mask].mean(axis=1, keepdims=True)
+            right_real_c3 = ((right_real_c3_raw - right_real_c3_baseline) / right_real_c3_baseline) * 100
+            right_real_c4 = ((right_real_c4_raw - right_real_c4_baseline) / right_real_c4_baseline) * 100
             
             # Imagined movement - left fist
             power_left_imag = mne.time_frequency.tfr_morlet(
                 left_imag, freqs=freqs, n_cycles=n_cycles,
                 return_itc=False, average=False, verbose=False
             )
-            left_imag_c3 = power_left_imag.data[:, c3_idx, :, :].mean(axis=1)
-            left_imag_c4 = power_left_imag.data[:, c4_idx, :, :].mean(axis=1)
-            
+            left_imag_c3_raw = power_left_imag.data[:, c3_idx, :, :].mean(axis=1)
+            left_imag_c4_raw = power_left_imag.data[:, c4_idx, :, :].mean(axis=1)
+            # Compute ERD/ERS
+            baseline_mask = (power_left_imag.times >= -1) & (power_left_imag.times < 0)
+            left_imag_c3_baseline = left_imag_c3_raw[:, baseline_mask].mean(axis=1, keepdims=True)
+            left_imag_c4_baseline = left_imag_c4_raw[:, baseline_mask].mean(axis=1, keepdims=True)
+            left_imag_c3 = ((left_imag_c3_raw - left_imag_c3_baseline) / left_imag_c3_baseline) * 100
+            left_imag_c4 = ((left_imag_c4_raw - left_imag_c4_baseline) / left_imag_c4_baseline) * 100
+
             # Imagined movement - right fist
             power_right_imag = mne.time_frequency.tfr_morlet(
                 right_imag, freqs=freqs, n_cycles=n_cycles,
                 return_itc=False, average=False, verbose=False
             )
-            right_imag_c3 = power_right_imag.data[:, c3_idx, :, :].mean(axis=1)
-            right_imag_c4 = power_right_imag.data[:, c4_idx, :, :].mean(axis=1)
-            
-            # Compute lateralization index: (C3 - C4) / (C3 + C4)
-            li_left_real = (left_real_c3 - left_real_c4) / (left_real_c3 + left_real_c4 + 1e-10)
-            li_right_real = (right_real_c3 - right_real_c4) / (right_real_c3 + right_real_c4 + 1e-10)
-            li_left_imag = (left_imag_c3 - left_imag_c4) / (left_imag_c3 + left_imag_c4 + 1e-10)
-            li_right_imag = (right_imag_c3 - right_imag_c4) / (right_imag_c3 + right_imag_c4 + 1e-10)
-            
+            right_imag_c3_raw = power_right_imag.data[:, c3_idx, :, :].mean(axis=1)
+            right_imag_c4_raw = power_right_imag.data[:, c4_idx, :, :].mean(axis=1)
+            # Compute ERD/ERS
+            baseline_mask = (power_right_imag.times >= -1) & (power_right_imag.times < 0)
+            right_imag_c3_baseline = right_imag_c3_raw[:, baseline_mask].mean(axis=1, keepdims=True)
+            right_imag_c4_baseline = right_imag_c4_raw[:, baseline_mask].mean(axis=1, keepdims=True)
+            right_imag_c3 = ((right_imag_c3_raw - right_imag_c3_baseline) / right_imag_c3_baseline) * 100
+            right_imag_c4 = ((right_imag_c4_raw - right_imag_c4_baseline) / right_imag_c4_baseline) * 100
+
+            # Compute lateralization index on ERD/ERS values: (C3 - C4) / (|C3| + |C4|)
+            li_left_real = (left_real_c3 - left_real_c4) / (np.abs(left_real_c3) + np.abs(left_real_c4) + 1e-10)
+            li_right_real = (right_real_c3 - right_real_c4) / (np.abs(right_real_c3) + np.abs(right_real_c4) + 1e-10)
+            li_left_imag = (left_imag_c3 - left_imag_c4) / (np.abs(left_imag_c3) + np.abs(left_imag_c4) + 1e-10)
+            li_right_imag = (right_imag_c3 - right_imag_c4) / (np.abs(right_imag_c3) + np.abs(right_imag_c4) + 1e-10)
+                        
             times = left_real.times
             
             # Plot actual movement
@@ -790,7 +823,7 @@ class ImaginedVsActualAnalyzer:
                 linewidth=2, label='Right Fist')
             ax.axhline(0, color='k', linestyle='-', alpha=0.3)
             ax.axvline(0, color='k', linestyle='--', alpha=0.5)
-            ax.set_ylabel('Lateralization Index')
+            ax.set_ylabel('Lateralization Index (ERD/ERS based)')
             ax.set_title(f'Lateralization Index - Actual ({band_name} Band)', fontweight='bold')
             ax.legend()
             ax.grid(True, alpha=0.3)
@@ -805,7 +838,7 @@ class ImaginedVsActualAnalyzer:
             ax.axhline(0, color='k', linestyle='-', alpha=0.3)
             ax.axvline(0, color='k', linestyle='--', alpha=0.5)
             ax.set_xlabel('Time (s)')
-            ax.set_ylabel('Lateralization Index')
+            ax.set_ylabel('Lateralization Index (ERD/ERS based)')
             ax.set_title(f'Lateralization Index - Imagined ({band_name} Band)', fontweight='bold')
             ax.legend()
             ax.grid(True, alpha=0.3)
