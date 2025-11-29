@@ -304,46 +304,55 @@ class SubjectDataExtractor(ImaginedVsActualAnalyzer):
         return features
     
     def _extract_band_power_features(self) -> Dict:
-        """Extract band power features."""
+        """Extract band power features as ERD/ERS (percent change from baseline)."""
         bands = {
             'theta': (4, 7),
-            'alpha': (8, 12),
+            'mu': (8, 13),
             'beta': (13, 30)
         }
         
-        features = {band: {'real': [], 'imagined': [], 'baseline_open': None, 'baseline_closed': None} 
-                   for band in bands}
+        features = {band: {'real': [], 'imagined': []} for band in bands}
         
         for band_name, (fmin, fmax) in bands.items():
             for key, data in self.data.items():
-                if 'baseline_eyes_open' in key:
-                    psd = data['raw'].compute_psd(
-                        method='welch', fmin=fmin, fmax=fmax,
-                        n_fft=512, n_overlap=256, verbose=False
-                    )
-                    psd_data, _ = psd.get_data(return_freqs=True)
-                    features[band_name]['baseline_open'] = psd_data.mean()
+                if 'epochs' in data:
+                    # Pick only motor channels
+                    motor_channels = [ch for ch in self.channels if ch in data['epochs'].ch_names]
+                    if not motor_channels:
+                        continue
                     
-                elif 'baseline_eyes_closed' in key:
-                    psd = data['raw'].compute_psd(
-                        method='welch', fmin=fmin, fmax=fmax,
-                        n_fft=512, n_overlap=256, verbose=False
-                    )
-                    psd_data, _ = psd.get_data(return_freqs=True)
-                    features[band_name]['baseline_closed'] = psd_data.mean()
+                    epochs_motor = data['epochs'].copy().pick_channels(motor_channels)
                     
-                elif 'epochs' in data:
-                    psd = data['epochs'].compute_psd(
-                        method='welch', fmin=fmin, fmax=fmax,
-                        n_fft=512, n_overlap=256, verbose=False
+                    # Compute time-frequency representation using Morlet wavelets
+                    freqs = np.arange(fmin, fmax + 1, 1)
+                    n_cycles = freqs / 2.0
+                    
+                    power = mne.time_frequency.tfr_morlet(
+                        epochs_motor, freqs=freqs, n_cycles=n_cycles,
+                        return_itc=False, average=False, verbose=False
                     )
-                    psd_data, _ = psd.get_data(return_freqs=True)
-                    band_power = psd_data.mean()
+                    
+                    # Average across frequencies and channels
+                    band_power_raw = power.data.mean(axis=1).mean(axis=1)  # (n_epochs, n_times)
+                    
+                    # Compute baseline power (average from -1 to 0 seconds)
+                    baseline_mask = (power.times >= -1) & (power.times < 0)
+                    baseline_power = band_power_raw[:, baseline_mask].mean(axis=1, keepdims=True)
+                    
+                    # Compute ERD/ERS: percent change from baseline
+                    erds = ((band_power_raw - baseline_power) / baseline_power) * 100
+                    
+                    # Average across time (movement period: 0-3 seconds)
+                    movement_mask = (power.times >= 0) & (power.times <= 3)
+                    erds_movement = erds[:, movement_mask].mean(axis=1)  # (n_epochs,)
+                    
+                    # Average across epochs to get single value per subject
+                    erds_subject = erds_movement.mean()
                     
                     if 'real' in key:
-                        features[band_name]['real'].append(band_power)
+                        features[band_name]['real'].append(erds_subject)
                     elif 'imagined' in key:
-                        features[band_name]['imagined'].append(band_power)
+                        features[band_name]['imagined'].append(erds_subject)
         
         return features
     
@@ -633,8 +642,8 @@ class MultiSubjectAnalyzer:
             'psd': {'real': [], 'imagined': [], 'baseline_open': [], 'baseline_closed': [], 'freqs': None},
             'amplitudes': {'channels': None, 'real': [], 'imagined': [], 'baseline_open': [], 'baseline_closed': []},
             'timefreq': {'fist': {'real': [], 'imagined': []}, 'fists_feet': {'real': [], 'imagined': []}},
-            'band_powers': {band: {'real': [], 'imagined': [], 'baseline_open': [], 'baseline_closed': []} 
-                           for band in ['theta', 'alpha', 'beta']},
+            'band_powers': {band: {'real': [], 'imagined': []} 
+               for band in ['theta', 'mu', 'beta']},
             'lateralization': {
                 'mu_band': {'real': {'left': [], 'right': []}, 'imagined': {'left': [], 'right': []}},
                 'beta_band': {'real': {'left': [], 'right': []}, 'imagined': {'left': [], 'right': []}}
@@ -685,19 +694,14 @@ class MultiSubjectAnalyzer:
             # Band power features
             if 'band_powers' in data:
                 bp = data['band_powers']
-                for band in ['theta', 'alpha', 'beta']:
+                for band in ['theta', 'mu', 'beta']:
                     if band in bp:
                         if bp[band]['real']:
                             self.aggregated_data['band_powers'][band]['real'].extend(bp[band]['real'])
                         if bp[band]['imagined']:
                             self.aggregated_data['band_powers'][band]['imagined'].extend(bp[band]['imagined'])
-                        if bp[band]['baseline_open'] is not None:
-                            self.aggregated_data['band_powers'][band]['baseline_open'].append(bp[band]['baseline_open'])
-                        if bp[band]['baseline_closed'] is not None:
-                            self.aggregated_data['band_powers'][band]['baseline_closed'].append(bp[band]['baseline_closed'])
             
             # Lateralization features
-            # Lateralization features - now with mu and beta bands
             if 'lateralization' in data:
                 lat = data['lateralization']
                 
@@ -979,45 +983,36 @@ class MultiSubjectAnalyzer:
         logger.info(f"  ✓ Saved: {output_path}")
     
     def _plot_group_band_power_statistics(self):
-        """Plot group band power statistics with significance tests."""
+        """Plot group ERD/ERS statistics with significance tests."""
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
-        fig.suptitle('Group Band Power Analysis', fontsize=16, fontweight='bold')
+        fig.suptitle('Group ERD/ERS Analysis', fontsize=16, fontweight='bold')
         
-        bands = ['theta', 'alpha', 'beta']
-        band_labels = ['Theta\n(4-7 Hz)', 'Alpha\n(8-12 Hz)', 'Beta\n(13-30 Hz)']
+        bands = ['theta', 'mu', 'beta']
+        band_labels = ['Theta\n(4-7 Hz)', 'Mu\n(8-13 Hz)', 'Beta\n(13-30 Hz)']
         
-        # Plot 1: Bar plot with all conditions
+        # Plot 1: Bar plot with actual vs imagined
         x = np.arange(len(bands))
-        width = 0.2
+        width = 0.35
         
         for i, band in enumerate(bands):
-            # Calculate means for all conditions
-            baseline_open_vals = [v for v in self.aggregated_data['band_powers'][band]['baseline_open'] if v is not None]
-            baseline_closed_vals = [v for v in self.aggregated_data['band_powers'][band]['baseline_closed'] if v is not None]
+            # Calculate means for actual and imagined (ERD/ERS already in percent)
+            real_mean = np.mean(self.aggregated_data['band_powers'][band]['real'])
+            imag_mean = np.mean(self.aggregated_data['band_powers'][band]['imagined'])
             
-            baseline_open_mean = np.mean(baseline_open_vals) * 1e12 if baseline_open_vals else 0
-            baseline_closed_mean = np.mean(baseline_closed_vals) * 1e12 if baseline_closed_vals else 0
-            real_mean = np.mean(self.aggregated_data['band_powers'][band]['real']) * 1e12
-            imag_mean = np.mean(self.aggregated_data['band_powers'][band]['imagined']) * 1e12
+            real_sem = stats.sem(self.aggregated_data['band_powers'][band]['real'])
+            imag_sem = stats.sem(self.aggregated_data['band_powers'][band]['imagined'])
             
-            baseline_open_sem = stats.sem(baseline_open_vals) * 1e12 if baseline_open_vals else 0
-            baseline_closed_sem = stats.sem(baseline_closed_vals) * 1e12 if baseline_closed_vals else 0
-            real_sem = stats.sem(self.aggregated_data['band_powers'][band]['real']) * 1e12
-            imag_sem = stats.sem(self.aggregated_data['band_powers'][band]['imagined']) * 1e12
-            
-            ax1.bar(x[i] - 1.5*width, baseline_open_mean, width, yerr=baseline_open_sem,
-                   color='#7F8C8D', alpha=0.7, capsize=5, label='Baseline (Open)' if i == 0 else '')
-            ax1.bar(x[i] - 0.5*width, baseline_closed_mean, width, yerr=baseline_closed_sem,
-                   color='#34495E', alpha=0.7, capsize=5, label='Baseline (Closed)' if i == 0 else '')
-            ax1.bar(x[i] + 0.5*width, real_mean, width, yerr=real_sem,
+            # Plot bars (2 bars per band: actual and imagined)
+            ax1.bar(x[i] - width/2, real_mean, width, yerr=real_sem,
                    color=COLORS['actual'], capsize=5, label='Actual' if i == 0 else '')
-            ax1.bar(x[i] + 1.5*width, imag_mean, width, yerr=imag_sem,
+            ax1.bar(x[i] + width/2, imag_mean, width, yerr=imag_sem,
                    color=COLORS['imagined'], capsize=5, label='Imagined' if i == 0 else '')
         
+        ax1.axhline(0, color='k', linestyle='-', linewidth=0.8)  # Add zero line
         ax1.set_xticks(x)
         ax1.set_xticklabels(band_labels)
-        ax1.set_ylabel('Power (pV²/Hz)', fontsize=12)
-        ax1.set_title('Band Power Comparison', fontsize=14)
+        ax1.set_ylabel('ERD/ERS (%)', fontsize=12)
+        ax1.set_title('ERD/ERS Comparison', fontsize=14)
         ax1.legend()
         ax1.grid(True, alpha=0.3, axis='y')
         
@@ -1036,8 +1031,8 @@ class MultiSubjectAnalyzer:
             
             results.append({
                 'Band': band.capitalize(),
-                'Real Mean±SEM': f"{np.mean(real_vals)*1e12:.2f}±{stats.sem(real_vals)*1e12:.2f}",
-                'Imagined Mean±SEM': f"{np.mean(imag_vals)*1e12:.2f}±{stats.sem(imag_vals)*1e12:.2f}",
+                'Real Mean±SEM': f"{np.mean(real_vals):.2f}±{stats.sem(real_vals):.2f}",
+                'Imagined Mean±SEM': f"{np.mean(imag_vals):.2f}±{stats.sem(imag_vals):.2f}",
                 'p-value': f"{p_val:.4f}",
                 'Effect Size': f"{cohens_d:.3f}",
                 'Sig': '***' if p_val < 0.001 else '**' if p_val < 0.01 else '*' if p_val < 0.05 else 'ns'
@@ -1161,9 +1156,9 @@ class MultiSubjectAnalyzer:
         mu_real = []
         mu_imag = []
         
-        for band_data in self.aggregated_data['band_powers']['alpha']['real']:
+        for band_data in self.aggregated_data['band_powers']['mu']['real']:
             mu_real.append(band_data * 1e12)
-        for band_data in self.aggregated_data['band_powers']['alpha']['imagined']:
+        for band_data in self.aggregated_data['band_powers']['mu']['imagined']:
             mu_imag.append(band_data * 1e12)
         
         data_to_plot = [mu_real, mu_imag]
@@ -1262,7 +1257,7 @@ class MultiSubjectAnalyzer:
             
             # Key statistics
             f.write("1. Band Power Analysis (Mean ± SEM):\n")
-            for band in ['theta', 'alpha', 'beta']:
+            for band in ['theta', 'mu', 'beta']:
                 real_vals = [v * 1e12 for v in self.aggregated_data['band_powers'][band]['real']]
                 imag_vals = [v * 1e12 for v in self.aggregated_data['band_powers'][band]['imagined']]
                 
@@ -1277,24 +1272,23 @@ class MultiSubjectAnalyzer:
             
             f.write("\n2. Movement Detection Performance:\n")
             # Calculate average suppression
-            alpha_real = [v * 1e12 for v in self.aggregated_data['band_powers']['alpha']['real']]
-            alpha_imag = [v * 1e12 for v in self.aggregated_data['band_powers']['alpha']['imagined']]
-            alpha_baseline_open = [v * 1e12 for v in self.aggregated_data['band_powers']['alpha']['baseline_open'] if v is not None]
+            mu_real = [v * 1e12 for v in self.aggregated_data['band_powers']['mu']['real']]
+            mu_imag = [v * 1e12 for v in self.aggregated_data['band_powers']['mu']['imagined']]
             
-            if alpha_baseline_open:
-                baseline_mean = np.mean(alpha_baseline_open)
-                real_suppression = ((baseline_mean - np.mean(alpha_real)) / baseline_mean * 100)
-                imag_suppression = ((baseline_mean - np.mean(alpha_imag)) / baseline_mean * 100)
+            # if alpha_baseline_open:
+            #     baseline_mean = np.mean(alpha_baseline_open)
+            #     real_suppression = ((baseline_mean - np.mean(alpha_real)) / baseline_mean * 100)
+            #     imag_suppression = ((baseline_mean - np.mean(alpha_imag)) / baseline_mean * 100)
                 
-                f.write(f"   - Mu suppression (vs baseline):\n")
-                f.write(f"     * Actual movement: {real_suppression:.1f}%\n")
-                f.write(f"     * Imagined movement: {imag_suppression:.1f}%\n")
-                f.write(f"   - Suppression ratio (Imagined/Actual): {imag_suppression/real_suppression:.2f}\n")
+            #     f.write(f"   - Mu suppression (vs baseline):\n")
+            #     f.write(f"     * Actual movement: {real_suppression:.1f}%\n")
+            #     f.write(f"     * Imagined movement: {imag_suppression:.1f}%\n")
+            #     f.write(f"   - Suppression ratio (Imagined/Actual): {imag_suppression/real_suppression:.2f}\n")
             
             f.write("\n3. Inter-Subject Variability:\n")
-            cv_real = np.std(alpha_real) / np.mean(alpha_real) * 100
-            cv_imag = np.std(alpha_imag) / np.mean(alpha_imag) * 100
-            f.write(f"   - Coefficient of variation (Alpha band):\n")
+            cv_real = np.std(mu_real) / np.mean(mu_real) * 100
+            cv_imag = np.std(mu_imag) / np.mean(mu_imag) * 100
+            f.write(f"   - Coefficient of variation (Mu band):\n")
             f.write(f"     * Actual: {cv_real:.1f}%\n")
             f.write(f"     * Imagined: {cv_imag:.1f}%\n")
             
