@@ -202,7 +202,7 @@ class ImaginedVsActualAnalyzer:
         if freqs is None:
             freqs = np.arange(4, 40, 1)
         
-        # Compute time-frequency representation
+        # Compute time frequency representation
         power = mne.time_frequency.tfr_morlet(
             epochs, freqs=freqs, n_cycles=freqs/2,
             use_fft=True, return_itc=False, average=True,
@@ -598,7 +598,7 @@ class ImaginedVsActualAnalyzer:
         self._plot_complexity_analysis()
         
     def _plot_lateralization_analysis(self):
-        
+        """Plot lateralization patterns for left vs. right fist movements"""    
         # Get left/right fist data
         left_real = []
         left_imag = []
@@ -645,7 +645,7 @@ class ImaginedVsActualAnalyzer:
     
     def _plot_lateralization_for_band(self, left_real, right_real, left_imag, right_imag,
                                    band_name, fmin, fmax, output_file):
-        """Plot lateralization analysis for a specific frequency band using band power."""
+        """Plot lateralization analysis for a specific frequency band using ERD/ERS%."""
         
         # Create the 2x3 grid (same as before)
         fig, axes = plt.subplots(2, 3, figsize=(18, 10))
@@ -668,7 +668,7 @@ class ImaginedVsActualAnalyzer:
                                     f'C4 - Imagined Movement ({band_name} Band)', 'Left Fist', 'Right Fist',
                                     fmin, fmax)
         
-        # Plot lateralization index based on band power
+        # Plot lateralization index based on ERD/ERS%
         self._plot_lateralization_index_bandpower(axes[:, 2], left_real, right_real,
                                     left_imag, right_imag, fmin, fmax, band_name)
         
@@ -742,7 +742,7 @@ class ImaginedVsActualAnalyzer:
         ax.set_xlim(-0.5, 3)
         
     def _plot_lateralization_index_bandpower(self, axes, left_real, right_real, left_imag, right_imag, fmin, fmax, band_name):
-        """Plot lateralization index based on band power: (C3 - C4) / (C3 + C4)."""
+        """Plot lateralization index based on ERD/ERS%: (C3 - C4) / (|C3| + |C4|)."""
         if 'C3' in left_real.ch_names and 'C4' in left_real.ch_names:
             c3_idx = left_real.ch_names.index('C3')
             c4_idx = left_real.ch_names.index('C4')
@@ -1175,12 +1175,12 @@ class ImaginedVsActualAnalyzer:
             
             f.write("2. 02a_lateralization_mu_band.png\n")
             f.write("   - Mu band (8-13 Hz) lateralization for left vs right movements\n")
-            f.write("   - Computed on band power instead of raw EEG amplitude\n")
+            f.write("   - Computed on ERD/ERS% instead of raw EEG amplitude\n")
             f.write("   - Shows contralateral motor cortex activation patterns\n\n")
 
             f.write("3. 02b_lateralization_beta_band.png\n")
             f.write("   - Beta band (13-30 Hz) lateralization for left vs right movements\n")
-            f.write("   - Computed on band power instead of raw EEG amplitude\n")
+            f.write("   - Computed on ERD/ERS% instead of raw EEG amplitude\n")
             f.write("   - Lateralization index showing hemispheric dominance\n\n")
                         
             f.write("4. 03_complexity_analysis.png\n")
