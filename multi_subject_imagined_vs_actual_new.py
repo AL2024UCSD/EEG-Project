@@ -1372,6 +1372,17 @@ class MultiSubjectAnalyzer:
             # Calculate average suppression
             mu_real = [v * 1e12 for v in self.aggregated_data['band_powers']['mu']['real']]
             mu_imag = [v * 1e12 for v in self.aggregated_data['band_powers']['mu']['imagined']]
+            mu_baseline_open = [v * 1e12 for v in self.aggregated_data['band_powers']['mu']['baseline_open'] if v is not None]
+                        
+            if mu_baseline_open:
+                baseline_mean = np.mean(mu_baseline_open)
+                real_suppression = ((baseline_mean - np.mean(mu_real)) / baseline_mean * 100)
+                imag_suppression = ((baseline_mean - np.mean(mu_imag)) / baseline_mean * 100)
+                            
+                f.write(f"   - Mu suppression (vs baseline):\n")
+                f.write(f"     * Actual movement: {real_suppression:.1f}%\n")
+                f.write(f"     * Imagined movement: {imag_suppression:.1f}%\n")
+                f.write(f"   - Suppression ratio (Imagined/Actual): {imag_suppression/real_suppression:.2f}\n")
             
             f.write("\n3. Inter-Subject Variability:\n")
             cv_real = np.std(mu_real) / np.mean(mu_real) * 100
@@ -1412,18 +1423,10 @@ class MultiSubjectAnalyzer:
             f.write("   - Response pattern clustering\n")
             f.write("   - Processing success rates\n\n")
             
-            f.write("CLINICAL IMPLICATIONS\n")
-            f.write("-"*60 + "\n")
-            f.write("1. Motor imagery produces detectable but attenuated neural signatures\n")
-            f.write("2. Approximately 60-70% of actual movement amplitude preserved\n")
-            f.write("3. Spatial patterns (lateralization) well-preserved\n")
-            f.write("4. High inter-subject variability suggests need for calibration\n")
-            f.write("5. Both mu and beta bands show significant modulation\n\n")
-            
             f.write("="*80 + "\n")
-            f.write("Analysis complete. All visualizations saved to output directory.\n")
+            f.write("Analysis completed.\n")
             
-        logger.info(f"  ✓ Saved group report: {report_path}")
+        logger.info(f"  Saved group report: {report_path}")
     
     def run_full_pipeline(self, max_workers: int = 4):
         """Run the complete multi-subject analysis pipeline."""
