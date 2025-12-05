@@ -9,7 +9,7 @@ from pathlib import Path
 # Add the current directory to Python path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from imagined_vs_actual_analysis import ImaginedVsActualAnalyzer
+from imagined_vs_actual_analysis_new import ImaginedVsActualAnalyzer
 
 def main():
     """Run the analysis."""
