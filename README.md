@@ -43,7 +43,7 @@ The pipeline extends the single-subject analysis to process all 109 subjects pro
 ### Direct Python Usage
 
 ```python
-from multi_subject_imagined_vs_actual import MultiSubjectAnalyzer
+from multi_subject_imagined_vs_actual_new import MultiSubjectAnalyzer
 
 # Create analyzer
 analyzer = MultiSubjectAnalyzer(base_path='set-eeg-motor-imagery-raw-data', output_dir='results')
