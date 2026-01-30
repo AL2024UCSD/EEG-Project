@@ -56,7 +56,7 @@ class ImaginedVsActualAnalyzer:
         """Initialize analyzer."""
         self.subject_id = subject_id
         self.base_path = Path(base_path) / subject_id
-        self.output_dir = Path(f'{subject_id}_imagined_vs_actual')
+        self.output_dir = Path('imagined_vs_actual')
         self.output_dir.mkdir(exist_ok=True)
         
         # Motor cortex channels
