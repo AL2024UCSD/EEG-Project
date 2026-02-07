@@ -31,8 +31,6 @@ warnings.filterwarnings('ignore', category=RuntimeWarning)
 def resting_alpha_power(subject_id, base_path):
     """Computing resting Alpha Power for one subject"""
 
-    checker = False
-
     subject_path = Path(base_path) / subject_id
     filename = subject_path / f"{subject_id}R02.edf"    # R02 corresponds to eyes-closed baseline
 
@@ -46,8 +44,8 @@ def resting_alpha_power(subject_id, base_path):
 
     raw.pick_channels(available_channels)
 
-    #Bandpass filter, 0.5 to 40 Hz
-    raw.filter(0.5, 40, fir_design='firwin', verbose=False)
+    #Bandpass filter, 2 to 35 Hz
+    raw.filter(2, 35, fir_design='firwin', verbose=False)
     alpha_psd = raw.compute_psd(
                 method='welch', 
                 fmin=8,     #alpha band start freq
@@ -57,24 +55,21 @@ def resting_alpha_power(subject_id, base_path):
                 verbose=False
             )
     alpha_psd_data, freqs = alpha_psd.get_data(return_freqs=True)   # alpha_psd_data is 2D, (n_channels, n_freqs), freqs is 1D array
-    resting_state_alpha_power = alpha_psd_data.mean(axis=1).mean(axis = 0)  # Average over frequencies then channels, result is single val
+    resting_state_alpha_power = np.trapezoid(alpha_psd_data, freqs, axis = 1).mean()  #Integrate over frequencies, avg across channels
 
     total_psd = raw.compute_psd(       #get total PSD by not restricting to alpha band freqs
         method = 'welch',
-        fmin = 0.5,
-        fmax = 40,
+        fmin = 2,
+        fmax = 35,
         n_fft = 2048,
         n_overlap = 1024,
         verbose = False
     )
     total_psd_data, freqs = total_psd.get_data(return_freqs = True)
-    resting_state_total_power = total_psd_data.mean(axis=1).mean(axis=0)
+    resting_state_total_power = np.trapezoid(total_psd_data, freqs, axis = 1).mean()
 
     # Calculating Relative Power Level (RPL)
     rpl = resting_state_alpha_power/resting_state_total_power
-
-    if rpl is not None:
-        checker = True
 
     # Considerations:
         # can average across just frequencies
@@ -85,18 +80,11 @@ def resting_alpha_power(subject_id, base_path):
         # 1. resting alpha power relative to other bands
         # 2. resting alpha power with eyes open, and/or average across the two
 
-    if checker:
-        return {
-            "rpl": rpl, 
-            "resting alpha power": resting_state_alpha_power, 
-            "resting total power": resting_state_total_power
-        }
-    else:
-       return {
-            "rpl": rpl, 
-            "resting alpha power": resting_state_alpha_power, 
-            "resting total power": resting_state_total_power
-        }
+    return {
+        "rpl_alpha": rpl, 
+        "resting alpha power": resting_state_alpha_power, 
+        "resting total power": resting_state_total_power
+    }
 
     # if checker:
     #     return {
@@ -117,6 +105,63 @@ def resting_alpha_power(subject_id, base_path):
     #         'error': True
     #     }
 
+
+def resting_beta_power(subject_id, base_path):
+    """Computing resting Beta Power for one subject"""
+
+    subject_path = Path(base_path) / subject_id
+    filename = subject_path / f"{subject_id}R02.edf"    # R02 corresponds to eyes-closed baseline
+
+    channels = ['C3', 'C4', 'Cz', 'FC1', 'FC2', 'CP1', 'CP2']
+    
+    raw = mne.io.read_raw_edf(filename, preload=True, verbose=False)
+    raw.rename_channels(lambda x: x.strip('.'))
+    
+    # Pick motor channels if available
+    available_channels = [ch for ch in channels if ch in raw.ch_names]
+
+    raw.pick_channels(available_channels)
+
+    #Bandpass filter, 2 to 35 Hz
+    raw.filter(2, 35, fir_design='firwin', verbose=False)
+    beta_psd = raw.compute_psd(
+                method='welch', 
+                fmin=13,     #beta band start freq
+                fmax=30,    # beta band end freq
+                n_fft=2048,  # window size; 2048 is pretty large -> better frequency distinction
+                n_overlap= 1024,    # convention is n_fft/2
+                verbose=False
+            )
+    beta_psd_data, freqs = beta_psd.get_data(return_freqs=True)   # betapsd_data is 2D, (n_channels, n_freqs), freqs is 1D array
+    resting_state_beta_power = np.trapezoid(beta_psd_data, freqs, axis = 1).mean()  #Integrate over frequencies, avg across channels
+
+    total_psd = raw.compute_psd(       #get total PSD by not restricting to alpha band freqs
+        method = 'welch',
+        fmin = 2,
+        fmax = 35,
+        n_fft = 2048,
+        n_overlap = 1024,
+        verbose = False
+    )
+    total_psd_data, freqs = total_psd.get_data(return_freqs = True)
+    resting_state_total_power = np.trapezoid(total_psd_data, freqs, axis = 1).mean()
+
+    # Calculating Relative Power Level (RPL)
+    rpl = resting_state_beta_power/resting_state_total_power
+
+    # Considerations:
+        # can average across just frequencies
+        # can average across just channels
+        # can average across both (for a single number) (current)
+
+    # Additional, general considerations:
+        # 1. resting alpha power relative to other bands
+        # 2. resting alpha power with eyes open, and/or average across the two
+
+    return {
+        "rpl_beta": rpl, 
+        "resting beta power": resting_state_beta_power, 
+    }
 
 # Second feature: SMR baseline strength
 def baseline_smr_strength(subject_id, base_path):
@@ -183,7 +228,7 @@ def baseline_smr_strength(subject_id, base_path):
     smr_psd_data_c3 = 10 * np.log10(smr_psd_c3)  # convert psd to dB
     smr_psd_data_c4 = 10 * np.log10(smr_psd_c4)
 
-    #freqs filtering for SMR range 8-30 Hz
+    #freqs filtering for SMR range 2-35 Hz
     freqs_mask = (freqs >= 2) & (freqs <= 35)
     freqs = freqs[freqs_mask]
     psd_c3_subset = smr_psd_data_c3[freqs_mask] # keeps only dB readings at positions of valid frequency
@@ -292,7 +337,7 @@ def freq_curve(freqs, lambda_val, k1, k2, k3, k4, mu1, mu2, sig1, sig2):
     return g1 + g2
 
 
-# Feature 3: ERD/ERS Magnitude
+# Feature 3: ERD/ERS Magnitude      (!!!CUT BECAUSE NEEDS MI)
 def erd_ers_magnitude(subject_id, base_path):
     checker = False
 
@@ -316,7 +361,7 @@ def erd_ers_magnitude(subject_id, base_path):
         raw.pick_channels(available_channels)
 
         # Bandpass filter
-        raw.filter(0.5, 40, fir_design='firwin', verbose=False)
+        raw.filter(2, 35, fir_design='firwin', verbose=False)
 
         data = raw.get_data()   # 2D numpy array, (n_channels x n_timepoints)
         ch_names = raw.ch_names #list of channel names as strings
@@ -382,6 +427,204 @@ def erd_ers_magnitude(subject_id, base_path):
     
     return magnitudes
 
+# # Feature 4: Lateralization Analysis  (!!!CUT BECAUSE NEEDS MI)
+# def lateralization_analysis(subject_id, base_path):
+#     subject_path = Path(base_path) / subject_id
+#     filename = subject_path / f"{subject_id}R02.edf"    # R02 corresponds to eyes-closed baseline
+
+#     channels = ['C3', 'C4', 'Cz', 'FC1', 'FC2', 'CP1', 'CP2']
+    
+#     raw = mne.io.read_raw_edf(filename, preload=True, verbose=False)
+#     raw.rename_channels(lambda x: x.strip('.'))
+    
+#     # Pick motor channels if available
+#     available_channels = [ch for ch in channels if ch in raw.ch_names]
+
+#     raw.pick_channels(available_channels)
+
+#     #Bandpass filter, 2 to 35 Hz
+    # raw.filter(2, 35, fir_design='firwin', verbose=False)
+
+
+# Feature 5: PSE (baseline runs) (based on Andrew's code, andrew_notebook.ipynb)
+def compute_pse(subject_id, base_path):
+    subject_path = Path(base_path) / subject_id
+    filename = subject_path / f"{subject_id}R01.edf"    # R01 corresponds to eyes-open baseline (no occipital alpha interference)
+
+    channels = ['C3', 'C4', 'Cz', 'FC1', 'FC2', 'CP1', 'CP2']
+    
+    raw = mne.io.read_raw_edf(filename, preload=True, verbose=False)
+    raw.rename_channels(lambda x: x.strip('.'))
+    
+    # Pick motor channels if available
+    available_channels = [ch for ch in channels if ch in raw.ch_names]
+
+    raw.pick_channels(available_channels)
+
+    #Bandpass filter, 2 to 35 Hz
+    raw.filter(2, 35, fir_design='firwin', verbose=False)
+
+    psd = raw.compute_psd(
+        method = 'welch',
+        fmin = 8,   # start of mu
+        fmax = 30,  # end of beta (end of SMR range)
+        n_fft = 512,    # 3.2 second window
+        n_overlap = 256,   # 50% overlap
+        verbose = False
+    )
+
+    # extract PSD
+    psd_data, freqs = psd.get_data(return_freqs = True)
+    
+    pse_dict = {
+        f"pse_{ch_name}": spectral_entropy(psd_data[i, :]) for i, ch_name in enumerate(available_channels)
+    }
+
+    pse_dict['pse_avg'] = np.mean(list(pse_dict.values()))
+
+    return pse_dict
+
+
+def spectral_entropy(psd, eps=1e-12):
+    """
+    PSE Helper
+    """
+    
+    # Add small epsilon to avoid log(0)
+    psd = psd + eps
+    
+    # Normalize PSD to make it a probability distribution
+    psd = psd / psd.sum()
+    
+    # Compute Shannon entropy
+    H = -np.sum(psd * np.log2(psd))
+    
+    # Normalize by maximum possible entropy (log2 of number of bins)
+    H_normalized = H / np.log2(len(psd))
+    
+    return H_normalized
+
+
+def lempel_ziv_complexity(subject_id, base_path):
+    subject_path = Path(base_path) / subject_id
+    filename = subject_path / f"{subject_id}R01.edf"    # R01 corresponds to eyes-open baseline
+
+    channels = ['C3', 'C4', 'Cz', 'FC1', 'FC2', 'CP1', 'CP2']
+    
+    raw = mne.io.read_raw_edf(filename, preload=True, verbose=False)
+    raw.rename_channels(lambda x: x.strip('.'))
+    
+    # Pick motor channels if available
+    available_channels = [ch for ch in channels if ch in raw.ch_names]
+
+    raw.pick_channels(available_channels)
+
+    #Bandpass filter, 2 to 35 Hz
+    raw.filter(2, 35, fir_design='firwin', verbose=False)
+    data = raw.get_data()
+
+    lzc_dict = {}
+
+    for i, ch_name in enumerate(available_channels):
+        channel_signal = data[i, :]     # time series for channel, 1D
+
+        binary_signal = binarize_signal(channel_signal)  # above/below median
+
+        lzc_value = lempel_ziv_complexity_calculation(binary_signal)
+    
+        lzc_dict[f"lzc_{ch_name}"] = lzc_value
+
+    # Compute average LZC across all channels
+    lzc_dict["lzc_avg"] = np.mean(list(lzc_dict.values()))
+    
+    return lzc_dict
+
+def binarize_signal(x: np.ndarray) -> np.ndarray:
+    """Convert signal to binary: 1 if above median, 0 if below."""
+    return (x > np.median(x)).astype(int)
+
+
+def lempel_ziv_complexity_calculation(binary_sequence: np.ndarray) -> float:
+    """Compute normalized Lempel-Ziv complexity (LZ76 algorithm)."""
+    # Convert binary array to string
+    s = ''.join(binary_sequence.astype(str))
+    n = len(s)
+    
+    # LZ76 algorithm
+    i, k, l = 0, 1, 1
+    c = 1
+    
+    while True:
+        if s[i + k - 1] == s[l + k - 1]:
+            k += 1
+            if l + k > n:
+                c += 1
+                break
+        else:
+            if k > 1:
+                i += 1
+                k -= 1
+            else:
+                c += 1
+                l += 1
+                if l > n:
+                    break
+                i = 0
+                k = 1
+    
+    # Normalize by maximum
+    return c * np.log2(n) / n
+
+
+def compute_theta_alpha_ratio(subject_id, base_path):
+    subject_path = Path(base_path) / subject_id
+    filename = subject_path / f"{subject_id}R01.edf"    # R01 corresponds to eyes-open baseline (no occipital alpha interference)
+
+    channels = ['C3', 'C4', 'Cz', 'FC1', 'FC2', 'CP1', 'CP2']
+    
+    raw = mne.io.read_raw_edf(filename, preload=True, verbose=False)
+    raw.rename_channels(lambda x: x.strip('.'))
+    
+    # Pick motor channels if available
+    available_channels = [ch for ch in channels if ch in raw.ch_names]
+
+    raw.pick_channels(available_channels)
+
+    #Bandpass filter, 2 to 35 Hz
+    raw.filter(2, 35, fir_design='firwin', verbose=False)
+
+    # Compute theta power (4-8 Hz)
+    theta_psd = raw.compute_psd(
+        method='welch',
+        fmin=4,
+        fmax=8,
+        n_fft=512,
+        n_overlap=256,
+        verbose=False
+    )
+    theta_psd_data, theta_freqs = theta_psd.get_data(return_freqs=True)
+    theta_power = np.trapezoid(theta_psd_data, theta_freqs, axis=1).mean()
+    
+    # Compute alpha power (8-13 Hz)
+    alpha_psd = raw.compute_psd(
+        method='welch',
+        fmin=8,
+        fmax=13,
+        n_fft=512,
+        n_overlap=256,
+        verbose=False
+    )
+    alpha_psd_data, alpha_freqs = alpha_psd.get_data(return_freqs=True)
+    alpha_power = np.trapezoid(alpha_psd_data, alpha_freqs, axis=1).mean()
+    
+    # Compute theta/alpha ratio
+    theta_alpha_ratio = theta_power / (alpha_power + 1e-10)  # Small epsilon to avoid division by zero
+    
+    return {
+        "theta_power": theta_power,
+        "alpha_power": alpha_power,
+        "theta_alpha_ratio": theta_alpha_ratio
+    }
 
 def all_subjects_analysis(
     base_path='eeg-motor-movementimagery-dataset-1.0.0/files',
@@ -407,14 +650,24 @@ def all_subjects_analysis(
         # returns dict: {"rpl": ..., "resting alpha power": ..., "resting total power": ...}
         try:
             ra = resting_alpha_power(sid, base_path)
-            row["rpl"] = float(ra.get("rpl")) if ra.get("rpl") is not None else None
+            row["rpl_alpha"] = float(ra.get("rpl_alpha")) if ra.get("rpl_alpha") is not None else None
             row["resting_alpha_power"] = float(ra.get("resting alpha power")) if ra.get("resting alpha power") is not None else None
             row["resting_total_power"] = float(ra.get("resting total power")) if ra.get("resting total power") is not None else None
         except Exception as e:
-            row["rpl"] = None
+            row["rpl_alpha"] = None
             row["resting_alpha_power"] = None
             row["resting_total_power"] = None
             row["resting_alpha_error"] = str(e)
+        
+        # Resting Beta Power
+        try:
+            ra = resting_beta_power(sid, base_path)
+            row["rpl_beta"] = float(ra.get("rpl_beta")) if ra.get("rpl_beta") is not None else None
+            row["resting_beta_power"] = float(ra.get("resting beta power")) if ra.get("resting beta power") is not None else None
+        except Exception as e:
+            row["rpl_beta"] = None
+            row["resting_beta_power"] = None
+            row["resting_beta_error"] = str(e)
     
         # Feature 2: SMR Baseline Strength
         # returns dict: {"smr strength": ...}
@@ -453,6 +706,32 @@ def all_subjects_analysis(
                 for ch in erd_channels:
                     row[f"{k}_{ch}"] = None
             row["erd_ers_error"] = str(e)
+        
+        # PSE
+        try:
+            pse = compute_pse(sid, base_path)
+            row.update(pse) 
+        except Exception as e:
+            row["pse_error"] = str(e)
+
+        # LZC
+        try:
+            lzc = lempel_ziv_complexity(sid, base_path)
+            row.update(lzc)
+        except Exception as e:
+            row["lzc_error"] = str(e)
+        
+        # Theta/Alpha Ratio
+        try:
+            tar = compute_theta_alpha_ratio(sid, base_path)
+            row["theta_power"] = float(tar.get("theta_power")) if tar.get("theta_power") is not None else None
+            row["alpha_power"] = float(tar.get("alpha_power")) if tar.get("alpha_power") is not None else None
+            row["theta_alpha_ratio"] = float(tar.get("theta_alpha_ratio")) if tar.get("theta_alpha_ratio") is not None else None
+        except Exception as e:
+            row["theta_power"] = None
+            row["alpha_power"] = None
+            row["theta_alpha_ratio"] = None
+            row["tar_error"] = str(e)
 
         rows.append(row)
 
