@@ -17,39 +17,79 @@ import warnings
 warnings.filterwarnings('ignore', category=RuntimeWarning)
 
 
+LAPLACIAN_SURROUNDING = {   # 4 closest electrodes to key electrode (includes above, left, right, and below)
+    'C3':  ['FC3', 'C1', 'CP3', 'C5'],
+    'C4':  ['FC4', 'C2', 'CP4', 'C6'],
+    'Cz':  ['FCz', 'C1', 'C2', 'CPz'],
+    'FC1': ['F1', 'FCz', 'FC3', 'C1'],
+    'FC2': ['F2', 'FCz', 'FC4', 'C2'],
+    'CP1': ['C1', 'CPz', 'CP3', 'P1'],
+    'CP2': ['C2', 'CPz', 'CP4', 'P2'],
+}
+
+def apply_laplacian_filtering(raw_cleaned, channels):
+    """ Applies Laplacian filtering to channels """
+
+    raw = raw_cleaned.copy()
+    
+    centers = [ch for ch in channels if ch in raw.ch_names]
+
+    all_needed = set(centers)
+
+    for ch in centers:
+        surrounds = [s for s in LAPLACIAN_SURROUNDING[ch] if s in raw.ch_names]
+        all_needed.update(surrounds)
+    
+    raw.pick_channels(list(all_needed))
+
+    data = raw.get_data()   # (n_channels, n_timepoints)
+    ch_names = raw.ch_names
+
+    laplacian_data = {}
+    for ch in centers:
+        surrounds = [s for s in LAPLACIAN_SURROUNDING[ch] if s in ch_names]
+
+        if len(surrounds) == 0:
+            laplacian_data[ch] = data[ch_names.index(ch), :]    # if no surrounding electrodes available, fall back
+        else:
+            center_idx = ch_names.index(ch)
+            surround_idx = [ch_names.index(s) for s in surrounds]
+            laplacian_data[ch] = data[center_idx, :] - np.mean(data[surround_idx, :], axis = 0)
+    
+    return laplacian_data, raw.info['sfreq']
+
+
+
+
+
 def resting_alpha_power(raw_cleaned):
     """Computing resting Alpha Power for one subject"""
 
-    raw = raw_cleaned.copy()   # copy so picking doesn't mutate the original
+    raw = raw_cleaned.copy()   # copy to not mutate the original
     
     channels = ['C3', 'C4', 'Cz', 'FC1', 'FC2', 'CP1', 'CP2']
-    available_channels = [ch for ch in channels if ch in raw.ch_names]
-    raw.pick_channels(available_channels)
+    laplacian_data, sfreq = apply_laplacian_filtering(raw, channels)
+
+    alpha_powers = []
+    total_powers = []
+
+    for ch, ch_signal in laplacian_data.items():
+        freqs, psd = signal.welch(ch_signal,
+                                  fs = sfreq,
+                                  window = 'hann',  # default, standard
+                                  nperseg = 2048,   # window size, large value 2048 gives better frequency distribution
+                                  noverlap = 1024)  # convention is window size / 2
+        
+        alpha_mask = (freqs >= 8) & (freqs <= 13)
+        alpha_powers.append(np.trapezoid(psd[alpha_mask], freqs[alpha_mask]))   # integrate over frequencies
+
+        total_mask = (freqs >= 1) & (freqs <= 40)
+        total_powers.append(np.trapezoid(psd[total_mask], freqs[total_mask]))
     
-    alpha_psd = raw.compute_psd(
-                method='welch', 
-                fmin=8,     #alpha band start freq
-                fmax=13,    # alpha band end freq
-                n_fft=2048,  # window size; 2048 is pretty large -> better frequency distinction
-                n_overlap= 1024,    # convention is n_fft/2
-                verbose=False
-            )
-    alpha_psd_data, freqs = alpha_psd.get_data(return_freqs=True)   # alpha_psd_data is 2D, (n_channels, n_freqs), freqs is 1D array
-    resting_state_alpha_power = np.trapezoid(alpha_psd_data, freqs, axis = 1).mean()  #Integrate over frequencies, avg across channels
-
-    total_psd = raw.compute_psd(       #get total PSD by not restricting to alpha band freqs
-        method = 'welch',
-        fmin = 1,
-        fmax = 40,
-        n_fft = 2048,
-        n_overlap = 1024,
-        verbose = False
-    )
-    total_psd_data, freqs = total_psd.get_data(return_freqs = True)
-    resting_state_total_power = np.trapezoid(total_psd_data, freqs, axis = 1).mean()
-
-    # Calculating Relative Power Level (RPL)
-    rpl = resting_state_alpha_power/resting_state_total_power
+    resting_state_alpha_power = np.mean(alpha_powers)
+    resting_state_total_power = np.mean(total_powers)
+    rpl = resting_state_alpha_power / resting_state_total_power # relative power level
+    
 
     # Considerations:
         # can average across just frequencies
@@ -66,73 +106,74 @@ def resting_alpha_power(raw_cleaned):
         "resting total power": resting_state_total_power
     }
 
-    # if checker:
-    #     return {
-    #         'subject_id': subject_id,
-    #         'alpha_power': resting_state_alpha_power,
-    #         'total_power': resting_state_total_power,
-    #         'rpl': rpl,
-    #         'success': True,
-    #         'error': None
-    #     }
-    # else:
-    #    return {
-    #         'subject_id': subject_id,
-    #         'alpha_power': None,
-    #         'total_power': None,
-    #         'rpl': None,
-    #         'success': False,
-    #         'error': True
-    #     }
 
+def resting_lower_beta_power(raw_cleaned):
+    """Computing resting lower Beta Power for one subject (13-20 Hz)"""
 
-def resting_beta_power(raw_cleaned):
-    """Computing resting Beta Power for one subject"""
-
-    raw = raw_cleaned.copy()
+    raw = raw_cleaned.copy()   # copy to not mutate the original
+    
     channels = ['C3', 'C4', 'Cz', 'FC1', 'FC2', 'CP1', 'CP2']
-    available_channels = [ch for ch in channels if ch in raw.ch_names]
-    raw.pick_channels(available_channels)
+    laplacian_data, sfreq = apply_laplacian_filtering(raw, channels)
 
+    beta_powers = []
+    total_powers = []
 
-    beta_psd = raw.compute_psd(
-                method='welch', 
-                fmin=13,     #beta band start freq
-                fmax=30,    # beta band end freq
-                n_fft=2048,  # window size; 2048 is pretty large -> better frequency distinction
-                n_overlap= 1024,    # convention is n_fft/2
-                verbose=False
-            )
-    beta_psd_data, freqs = beta_psd.get_data(return_freqs=True)   # betapsd_data is 2D, (n_channels, n_freqs), freqs is 1D array
-    resting_state_beta_power = np.trapezoid(beta_psd_data, freqs, axis = 1).mean()  #Integrate over frequencies, avg across channels
+    for ch, ch_signal in laplacian_data.items():
+        freqs, psd = signal.welch(ch_signal,
+                                  fs = sfreq,
+                                  window = 'hann',  # default, standard
+                                  nperseg = 2048,   # window size, large value 2048 gives better frequency distribution
+                                  noverlap = 1024)  # convention is window size / 2
+        
+        beta_mask = (freqs >= 13) & (freqs <= 20)
+        beta_powers.append(np.trapezoid(psd[beta_mask], freqs[beta_mask]))   # integrate over frequencies
 
-    total_psd = raw.compute_psd(       #get total PSD by not restricting to alpha band freqs
-        method = 'welch',
-        fmin = 1,
-        fmax = 40,
-        n_fft = 2048,
-        n_overlap = 1024,
-        verbose = False
-    )
-    total_psd_data, freqs = total_psd.get_data(return_freqs = True)
-    resting_state_total_power = np.trapezoid(total_psd_data, freqs, axis = 1).mean()
-
-    # Calculating Relative Power Level (RPL)
-    rpl = resting_state_beta_power/resting_state_total_power
-
-    # Considerations:
-        # can average across just frequencies
-        # can average across just channels
-        # can average across both (for a single number) (current)
-
-    # Additional, general considerations:
-        # 1. resting alpha power relative to other bands
-        # 2. resting alpha power with eyes open, and/or average across the two
+        total_mask = (freqs >= 1) & (freqs <= 40)
+        total_powers.append(np.trapezoid(psd[total_mask], freqs[total_mask]))
+    
+    resting_state_beta_power = np.mean(beta_powers)
+    resting_state_total_power = np.mean(total_powers)
+    rpl = resting_state_beta_power / resting_state_total_power # relative power level
 
     return {
-        "rpl_beta": rpl, 
-        "resting beta power": resting_state_beta_power, 
+        "rpl_lower_beta": rpl, 
+        "resting_lower_beta_power": resting_state_beta_power, 
     }
+
+
+def resting_upper_beta_power(raw_cleaned):
+    """Computing resting upper Beta Power for one subject (20-30 Hz)"""
+
+    raw = raw_cleaned.copy()   # copy to not mutate the original
+    
+    channels = ['C3', 'C4', 'Cz', 'FC1', 'FC2', 'CP1', 'CP2']
+    laplacian_data, sfreq = apply_laplacian_filtering(raw, channels)
+
+    beta_powers = []
+    total_powers = []
+
+    for ch, ch_signal in laplacian_data.items():
+        freqs, psd = signal.welch(ch_signal,
+                                  fs = sfreq,
+                                  window = 'hann',  # default, standard
+                                  nperseg = 2048,   # window size, large value 2048 gives better frequency distribution
+                                  noverlap = 1024)  # convention is window size / 2
+        
+        beta_mask = (freqs >= 20) & (freqs <= 30)
+        beta_powers.append(np.trapezoid(psd[beta_mask], freqs[beta_mask]))   # integrate over frequencies
+
+        total_mask = (freqs >= 1) & (freqs <= 40)
+        total_powers.append(np.trapezoid(psd[total_mask], freqs[total_mask]))
+    
+    resting_state_beta_power = np.mean(beta_powers)
+    resting_state_total_power = np.mean(total_powers)
+    rpl = resting_state_beta_power / resting_state_total_power # relative power level
+
+    return {
+        "rpl_upper_beta": rpl, 
+        "resting_upper_beta_power": resting_state_beta_power, 
+    }
+
 
 # Second feature: SMR baseline strength
 def baseline_smr_strength(raw_cleaned):
@@ -263,6 +304,7 @@ def baseline_smr_strength(raw_cleaned):
 
     smr_strength = (smr_strength_c4 + smr_strength_c3) / 2
     return {"smr strength": smr_strength}
+
 def freq_curve(freqs, lambda_val, k1, k2, k3, k4, mu1, mu2, sig1, sig2):
     # Parameters:
         # freqs: array of frequencies
@@ -292,37 +334,28 @@ def freq_curve(freqs, lambda_val, k1, k2, k3, k4, mu1, mu2, sig1, sig2):
 
 # Feature 5: PSE (baseline runs) (based on Andrew's code, andrew_notebook.ipynb)
 def compute_pse(raw_cleaned):
+    """ Computing Power Spectral Entropy (PSE) for one subject """
     
     raw = raw_cleaned.copy()
     channels = ['C3', 'C4', 'Cz', 'FC1', 'FC2', 'CP1', 'CP2']
-    available_channels = [ch for ch in channels if ch in raw.ch_names]
-    raw.pick_channels(available_channels)
+    laplacian_data, sfreq = apply_laplacian_filtering(raw, channels)
 
-    psd = raw.compute_psd(
-        method = 'welch',
-        fmin = 8,   # start of mu
-        fmax = 30,  # end of beta (end of SMR range)
-        n_fft = 512,    # 3.2 second window
-        n_overlap = 256,   # 50% overlap
-        verbose = False
-    )
-
-    # extract PSD
-    psd_data, freqs = psd.get_data(return_freqs = True)
+    pse_dict = {}
+    for ch, ch_signal in laplacian_data.items():
+        freqs, psd = signal.welch(ch_signal,
+                                  fs = sfreq,
+                                  window = 'hann',
+                                  nperseg = 512,
+                                  noverlap= 256)
+        smr_mask = (freqs >= 8) & (freqs <= 30)
+        pse_dict[f"pse_{ch}"] = spectral_entropy(psd[smr_mask])
     
-    pse_dict = {
-        f"pse_{ch_name}": spectral_entropy(psd_data[i, :]) for i, ch_name in enumerate(available_channels)
-    }
-
     pse_dict['pse_avg'] = np.mean(list(pse_dict.values()))
-
     return pse_dict
 
 
 def spectral_entropy(psd, eps=1e-12):
-    """
-    PSE Helper
-    """
+    """ PSE Helper """
     
     # Add small epsilon to avoid log(0)
     psd = psd + eps
@@ -340,28 +373,19 @@ def spectral_entropy(psd, eps=1e-12):
 
 
 def lempel_ziv_complexity(raw_cleaned):
-     
+    """ Computing Lempel-Ziv Complexity (LZC) for one subject"""
+    
     raw = raw_cleaned.copy()
     channels = ['C3', 'C4', 'Cz', 'FC1', 'FC2', 'CP1', 'CP2']
-    available_channels = [ch for ch in channels if ch in raw.ch_names]
-    raw.pick_channels(available_channels)
 
-    data = raw.get_data()
+    laplacian_data, sfreq = apply_laplacian_filtering(raw, channels)
 
     lzc_dict = {}
-
-    for i, ch_name in enumerate(available_channels):
-        channel_signal = data[i, :]     # time series for channel, 1D
-
-        binary_signal = binarize_signal(channel_signal)  # above/below median
-
-        lzc_value = lempel_ziv_complexity_calculation(binary_signal)
+    for ch, ch_signal in laplacian_data.items():
+        binary_signal = binarize_signal(ch_signal)
+        lzc_dict[f"lzc_{ch}"] = lempel_ziv_complexity_calculation(binary_signal)
     
-        lzc_dict[f"lzc_{ch_name}"] = lzc_value
-
-    # Compute average LZC across all channels
     lzc_dict["lzc_avg"] = np.mean(list(lzc_dict.values()))
-    
     return lzc_dict
 
 def binarize_signal(x: np.ndarray) -> np.ndarray:
@@ -402,44 +426,39 @@ def lempel_ziv_complexity_calculation(binary_sequence: np.ndarray) -> float:
 
 
 def compute_theta_alpha_ratio(raw_cleaned):
-    
+    """ compute theta/alpha ratio (TAR) for one subject """
     raw = raw_cleaned.copy()
     channels = ['C3', 'C4', 'Cz', 'FC1', 'FC2', 'CP1', 'CP2']
-    available_channels = [ch for ch in channels if ch in raw.ch_names]
-    raw.pick_channels(available_channels)
 
-    # Compute theta power (4-8 Hz)
-    theta_psd = raw.compute_psd(
-        method='welch',
-        fmin=4,
-        fmax=8,
-        n_fft=512,
-        n_overlap=256,
-        verbose=False
-    )
-    theta_psd_data, theta_freqs = theta_psd.get_data(return_freqs=True)
-    theta_power = np.trapezoid(theta_psd_data, theta_freqs, axis=1).mean()
+    laplacian_data, sfreq = apply_laplacian_filtering(raw, channels)
+
+    theta_powers  = []
+    alpha_powers = []
+
+    for ch, ch_signal in laplacian_data.items():
+        freqs, psd = signal.welch(ch_signal,
+                                  fs = sfreq,
+                                  window = 'hann',
+                                  nperseg = 512,
+                                  noverlap = 256)
+        
+        theta_mask = (freqs >= 4) & (freqs <= 8)
+        theta_powers.append(np.trapezoid(psd[theta_mask], freqs[theta_mask]))
+
+        alpha_mask = (freqs >= 8) & (freqs <= 13)
+        alpha_powers.append(np.trapezoid(psd[alpha_mask], freqs[alpha_mask]))
     
-    # Compute alpha power (8-13 Hz)
-    alpha_psd = raw.compute_psd(
-        method='welch',
-        fmin=8,
-        fmax=13,
-        n_fft=512,
-        n_overlap=256,
-        verbose=False
-    )
-    alpha_psd_data, alpha_freqs = alpha_psd.get_data(return_freqs=True)
-    alpha_power = np.trapezoid(alpha_psd_data, alpha_freqs, axis=1).mean()
-    
-    # Compute theta/alpha ratio
-    theta_alpha_ratio = theta_power / (alpha_power + 1e-10)  # Small epsilon to avoid division by zero
-    
+    theta_power = np.mean(theta_powers)
+    alpha_power = np.mean(alpha_powers)
+    tar = theta_power / (alpha_power + 1e-10)   # prevent from ballooning
+
     return {
         "theta_power": theta_power,
         "alpha_power": alpha_power,
-        "theta_alpha_ratio": theta_alpha_ratio
+        "tar": tar
     }
+
+    
 
 def preprocess(subject_id, base_path, run_id = 'R01'):
     """Loads raw data, applies ICA artifact removal, returns cleaned Raw object"""
@@ -524,8 +543,11 @@ def all_subjects_analysis(
             ra = resting_alpha_power(raw_r02)   # use eyes closed
             row.update(ra)
 
-            rb = resting_beta_power(raw_r02)    # use eyes closed
-            row.update(rb)
+            rlb = resting_lower_beta_power(raw_r02)    # use eyes closed
+            row.update(rlb)
+
+            rub = resting_upper_beta_power(raw_r02) # use eyes closed
+            row.update(rub)
 
             smr = baseline_smr_strength(raw_r01)    # use eyes open
             row.update(smr)
