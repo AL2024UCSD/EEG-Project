@@ -60,8 +60,6 @@ def apply_laplacian_filtering(raw_cleaned, channels):
 
 
 
-
-
 def resting_alpha_power(raw_cleaned):
     """Computing resting Alpha Power for one subject"""
 
@@ -70,7 +68,7 @@ def resting_alpha_power(raw_cleaned):
     channels = ['C3', 'C4', 'Cz', 'FC1', 'FC2', 'CP1', 'CP2']
     laplacian_data, sfreq = apply_laplacian_filtering(raw, channels)
 
-    alpha_powers = []
+    alpha_powers = {}
     total_powers = []
 
     for ch, ch_signal in laplacian_data.items():
@@ -81,12 +79,12 @@ def resting_alpha_power(raw_cleaned):
                                   noverlap = 1024)  # convention is window size / 2
         
         alpha_mask = (freqs >= 8) & (freqs <= 13)
-        alpha_powers.append(np.trapezoid(psd[alpha_mask], freqs[alpha_mask]))   # integrate over frequencies
+        alpha_powers[ch] = np.trapezoid(psd[alpha_mask], freqs[alpha_mask])   # integrate over frequencies
 
         total_mask = (freqs >= 1) & (freqs <= 40)
         total_powers.append(np.trapezoid(psd[total_mask], freqs[total_mask]))
     
-    resting_state_alpha_power = np.mean(alpha_powers)
+    resting_state_alpha_power = np.mean(list(alpha_powers.values()))
     resting_state_total_power = np.mean(total_powers)
     rpl = resting_state_alpha_power / resting_state_total_power # relative power level
     
@@ -101,9 +99,77 @@ def resting_alpha_power(raw_cleaned):
         # 2. resting alpha power with eyes open, and/or average across the two
 
     return {
-        "rpl_alpha": rpl, 
-        "resting alpha power": resting_state_alpha_power, 
-        "resting total power": resting_state_total_power
+        "rpl_alpha": rpl,   # relative power level
+        "resting_alpha_power": resting_state_alpha_power, 
+        "resting_total_power": resting_state_total_power,
+        "alpha_power_c3": alpha_powers['C3'],
+        "alpha_power_c4": alpha_powers['C4'],
+        "alpha_asymmetry": np.log(alpha_powers['C4']) - np.log(alpha_powers['C3'])
+    }
+
+
+def alpha_power_variability(raw_cleaned):
+    """ compute variability of alpha power across sliding windows at C3 and C4 electrodes for one subject """
+    
+    raw = raw_cleaned.copy()
+    channels = ['C3', 'C4']
+    laplacian_data, sfreq = apply_laplacian_filtering(raw, channels)
+
+    # 2 second windows with 1 second overlaps means there is always clean overlap
+    # convert time durations into array indices
+    window_sec = 2.0
+    overlap_sec = 1.0
+    window_samples = int(window_sec * sfreq)
+    step_samples = int((window_sec - overlap_sec) * sfreq)
+
+    result = {}
+    for ch, ch_signal in laplacian_data.items():
+        alpha_powers = []
+        start = 0
+        while start + window_samples <= len(ch_signal):
+            segment = ch_signal[start:start + window_samples]
+            freqs, psd = signal.welch(segment,
+                                      fs = sfreq,
+                                      window = 'hann',
+                                      nperseg = len(segment),
+                                      noverlap = 0)
+            alpha_mask= (freqs >= 8) & (freqs <= 13)
+            alpha_powers.append(np.trapezoid(psd[alpha_mask], freqs[alpha_mask]))
+            start += step_samples
+        
+        alpha_powers = np.array(alpha_powers)
+        result[f"alpha_var_{ch}"] = np.std(alpha_powers)    # raw std dev of alpha power across windows
+        result[f"alpha_cv_{ch}"] = np.std(alpha_powers) / (np.mean(alpha_powers) + 1e-10)   # coefficient of variation (normalized)
+    
+    return result
+
+
+def interhemispheric_coherence(raw_cleaned):
+    """ Compute magnitude squared coherence between C3 and C4 in mu and beta bands for one subject"""
+
+    raw = raw_cleaned.copy()
+    channels = ['C3', 'C4']
+    laplacian_data, sfreq = apply_laplacian_filtering(raw, channels)
+
+    c3_signal = laplacian_data['C3']
+    c4_signal = laplacian_data['C4']
+
+    freqs, coh = signal.coherence(c3_signal, 
+                                  c4_signal,
+                                  fs = sfreq, 
+                                  window = 'hann',
+                                  nperseg = 2048,
+                                  noverlap = 1024)
+    mu_mask = (freqs >= 8) & (freqs <= 13)
+    beta_mask = (freqs >= 13) & (freqs <= 30)
+    low_beta_mask = (freqs >= 13) & (freqs <= 20)
+    upper_beta_mask = (freqs >= 20) & (freqs <= 30)
+
+    return {
+        "coherence_mu": np.mean(coh[mu_mask]),
+        "coherence_beta": np.mean(coh[beta_mask]),
+        "coherence_low_beta": np.mean(coh[low_beta_mask]),
+        "coherence_upper_beta": np.mean(coh[upper_beta_mask])
     }
 
 
@@ -242,7 +308,7 @@ def baseline_smr_strength(raw_cleaned):
 
     bounds = (
     [0.5, -150, 0, 0, 0, 8, 13, 1, 1],        # Lower bounds
-    [2.0,  150, 50, 20, 20, 13, 30, 10, 10]   # Upper bounds
+    [2.0,  150, 50, 100, 100, 13, 30, 10, 10]   # Upper bounds
     )
 
     k1_guess = np.clip(psd_c3_subset[-1], -20, 20)    # approximate expected high-freq value
@@ -303,7 +369,34 @@ def baseline_smr_strength(raw_cleaned):
     smr_strength_c4 = np.max(g2_c4)     # maximum peak height above noise
 
     smr_strength = (smr_strength_c4 + smr_strength_c3) / 2
-    return {"smr strength": smr_strength}
+
+    # re unpack with distinct names for returning
+    lambda_c3, k1_c3, k2_c3, k3_c3, k4_c3, mu1_c3, mu2_c3, sig1_c3, sig2_c3 = optimal_params_c3
+    lambda_c4, k1_c4, k2_c4, k3_c4, k4_c4, mu1_c4, mu2_c4, sig1_c4, sig2_c4 = optimal_params_c4
+
+    # if IAF right near boundary, no clear peak
+    if (mu1_c3 >= 8.01) and (mu1_c3 <= 12.99):
+        iaf_c3 = mu1_c3
+    else:
+        iaf_c3 = np.nan
+    
+    if (mu1_c4 >= 8.01) and (mu1_c4 <= 12.99):
+        iaf_c4 = mu1_c4
+    else:
+        iaf_c4 = np.nan
+
+    return {"smr_strength": smr_strength,
+            "IAF_c3": iaf_c3,     # individual alpha frequency
+            "alpha_peak_amp_c3": k3_c3,     # alpha peak height
+            "beta_peak_amp_c3": k4_c3,      # beta peak height
+            "beta_center_freq_c3": mu2_c3,
+            "aperiodic_exp_c3": lambda_c3,      # 1/f slope
+            "IAF_c4": iaf_c4,
+            "alpha_peak_amp_c4": k3_c4,
+            "beta_peak_amp_c4": k4_c4,
+            "beta_center_freq_c4": mu2_c4,
+            "aperiodic_exp_c4": lambda_c4
+            }
 
 def freq_curve(freqs, lambda_val, k1, k2, k3, k4, mu1, mu2, sig1, sig2):
     # Parameters:
@@ -378,10 +471,15 @@ def lempel_ziv_complexity(raw_cleaned):
     raw = raw_cleaned.copy()
     channels = ['C3', 'C4', 'Cz', 'FC1', 'FC2', 'CP1', 'CP2']
 
-    laplacian_data, sfreq = apply_laplacian_filtering(raw, channels)
+    available = [ch for ch in channels if ch in raw.ch_names]
+    raw.pick_channels(available)
+
+    data = raw.get_data()
+    ch_names = raw.ch_names
 
     lzc_dict = {}
-    for ch, ch_signal in laplacian_data.items():
+    for ch in available:
+        ch_signal = data[ch_names.index(ch), :]
         binary_signal = binarize_signal(ch_signal)
         lzc_dict[f"lzc_{ch}"] = lempel_ziv_complexity_calculation(binary_signal)
     
@@ -471,7 +569,7 @@ def preprocess(subject_id, base_path, run_id = 'R01'):
     raw.rename_channels(lambda x: x.strip('.'))
 
     # 10-10 montage: maps from channel names to 3D coordinates
-    montage = mne.channels.make_standard_montage('standard_1010')
+    montage = mne.channels.make_standard_montage('standard_1005')
     raw.set_montage(montage, on_missing = 'ignore')
 
     # re referencing with common average reference
@@ -483,7 +581,7 @@ def preprocess(subject_id, base_path, run_id = 'R01'):
     # ICA
     ica = mne.preprocessing.ICA(
         n_components = 20,   # conventional starting point to capture artifacts
-        method = 'fastica',
+        method = 'picard',  # to help with convergence
         max_iter = 'auto'
     )
     ica.fit(raw, verbose = False)
@@ -551,6 +649,12 @@ def all_subjects_analysis(
 
             smr = baseline_smr_strength(raw_r01)    # use eyes open
             row.update(smr)
+
+            apv = alpha_power_variability(raw_r01)    # use eyes open
+            row.update(apv)
+
+            ihc = interhemispheric_coherence(raw_r01)  # use eyes open
+            row.update(ihc)
 
             pse = compute_pse(raw_r01)    # use eyes open
             row.update(pse)
