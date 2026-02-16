@@ -112,7 +112,7 @@ Our project focuses on the creation of a motor imagery brain-computer interface 
 - andrew_notebook.ipynb (used to initially extract Power Spectral Entropy (PSE), Lempel-Ziv Complexity (LZC), and Theta-Alpha Power Ratio (TAR), also used for some EDA and visualizations on those features)
 - daniel_final.py (used to extract other features, modify the andrew_notebook features for easier implementation, and to create the combined features dataset (eeg_features.csv))
 - EDA_daniel.ipynb (used for more EDA on features)
--test_load.py (extracts the MetaBCI labels, creates the physionetmi_subject_mean_accuracy.csv file)
+- test_load.py (extracts the MetaBCI labels, creates the physionetmi_subject_mean_accuracy.csv file)
 
 
 ## Relevant folders/csv files
