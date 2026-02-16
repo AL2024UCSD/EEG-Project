@@ -568,7 +568,7 @@ def preprocess(subject_id, base_path, run_id = 'R01'):
     raw = mne.io.read_raw_edf(filename, preload = True, verbose = False)
     raw.rename_channels(lambda x: x.strip('.'))
 
-    # 10-10 montage: maps from channel names to 3D coordinates
+    # 10-05 montage: maps from channel names to 3D coordinates
     montage = mne.channels.make_standard_montage('standard_1005')
     raw.set_montage(montage, on_missing = 'ignore')
 
