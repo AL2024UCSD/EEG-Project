@@ -61,7 +61,7 @@ def apply_laplacian_filtering(raw_cleaned, channels):
 
 
 def resting_alpha_power(raw_cleaned):
-    """Computing resting Alpha Power for one subject"""
+    """Computing resting Alpha Power for one subject, with rpl and TAR"""
 
     raw = raw_cleaned.copy()   # copy to not mutate the original
     
@@ -69,6 +69,7 @@ def resting_alpha_power(raw_cleaned):
     laplacian_data, sfreq = apply_laplacian_filtering(raw, channels)
 
     alpha_powers = {}
+    theta_powers = {}
     total_powers = []
 
     for ch, ch_signal in laplacian_data.items():
@@ -81,11 +82,16 @@ def resting_alpha_power(raw_cleaned):
         alpha_mask = (freqs >= 8) & (freqs <= 13)
         alpha_powers[ch] = np.trapezoid(psd[alpha_mask], freqs[alpha_mask])   # integrate over frequencies
 
+        theta_mask = (freqs >= 4) & (freqs <= 8)
+        theta_powers[ch] = np.trapezoid(psd[theta_mask], freqs[theta_mask])   # integrate over frequencies
+
         total_mask = (freqs >= 1) & (freqs <= 40)
         total_powers.append(np.trapezoid(psd[total_mask], freqs[total_mask]))
     
     resting_state_alpha_power = np.mean(list(alpha_powers.values()))
+    resting_state_theta_power = np.mean(list(theta_powers.values()))
     resting_state_total_power = np.mean(total_powers)
+    tar = resting_state_theta_power / resting_state_alpha_power
     rpl = resting_state_alpha_power / resting_state_total_power # relative power level
     
 
@@ -100,6 +106,7 @@ def resting_alpha_power(raw_cleaned):
 
     return {
         "rpl_alpha": rpl,   # relative power level
+        "tar": tar,         # theta/alpha ratio
         "resting_alpha_power": resting_state_alpha_power, 
         "resting_total_power": resting_state_total_power,
         "alpha_power_c3": alpha_powers['C3'],
@@ -523,38 +530,38 @@ def lempel_ziv_complexity_calculation(binary_sequence: np.ndarray) -> float:
     return c * np.log2(n) / n
 
 
-def compute_theta_alpha_ratio(raw_cleaned):
-    """ compute theta/alpha ratio (TAR) for one subject """
-    raw = raw_cleaned.copy()
-    channels = ['C3', 'C4', 'Cz', 'FC1', 'FC2', 'CP1', 'CP2']
+# def compute_theta_alpha_ratio(raw_cleaned):
+#     """ compute theta/alpha ratio (TAR) for one subject """
+#     raw = raw_cleaned.copy()
+#     channels = ['C3', 'C4', 'Cz', 'FC1', 'FC2', 'CP1', 'CP2']
 
-    laplacian_data, sfreq = apply_laplacian_filtering(raw, channels)
+#     laplacian_data, sfreq = apply_laplacian_filtering(raw, channels)
 
-    theta_powers  = []
-    alpha_powers = []
+#     theta_powers  = []
+#     alpha_powers = []
 
-    for ch, ch_signal in laplacian_data.items():
-        freqs, psd = signal.welch(ch_signal,
-                                  fs = sfreq,
-                                  window = 'hann',
-                                  nperseg = 512,
-                                  noverlap = 256)
+#     for ch, ch_signal in laplacian_data.items():
+#         freqs, psd = signal.welch(ch_signal,
+#                                   fs = sfreq,
+#                                   window = 'hann',
+#                                   nperseg = 512,
+#                                   noverlap = 256)
         
-        theta_mask = (freqs >= 4) & (freqs <= 8)
-        theta_powers.append(np.trapezoid(psd[theta_mask], freqs[theta_mask]))
+#         theta_mask = (freqs >= 4) & (freqs <= 8)
+#         theta_powers.append(np.trapezoid(psd[theta_mask], freqs[theta_mask]))
 
-        alpha_mask = (freqs >= 8) & (freqs <= 13)
-        alpha_powers.append(np.trapezoid(psd[alpha_mask], freqs[alpha_mask]))
+#         alpha_mask = (freqs >= 8) & (freqs <= 13)
+#         alpha_powers.append(np.trapezoid(psd[alpha_mask], freqs[alpha_mask]))
     
-    theta_power = np.mean(theta_powers)
-    alpha_power = np.mean(alpha_powers)
-    tar = theta_power / (alpha_power + 1e-10)   # prevent from ballooning
+#     theta_power = np.mean(theta_powers)
+#     alpha_power = np.mean(alpha_powers)
+#     tar = theta_power / (alpha_power + 1e-10)   # prevent from ballooning
 
-    return {
-        "theta_power": theta_power,
-        "alpha_power": alpha_power,
-        "tar": tar
-    }
+#     return {
+#         "theta_power": theta_power,
+#         "alpha_power": alpha_power,
+#         "tar": tar
+#     }
 
     
 
@@ -662,8 +669,8 @@ def all_subjects_analysis(
             lzc = lempel_ziv_complexity(raw_r01)    # use eyes open
             row.update(lzc)
 
-            tar = compute_theta_alpha_ratio(raw_r01)    # use eyes open
-            row.update(tar)
+            # tar = compute_theta_alpha_ratio(raw_r01)    # use eyes open
+            # row.update(tar)
 
         except Exception as e:
             row['preprocessing_error'] = str(e)
