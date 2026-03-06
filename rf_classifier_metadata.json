@@ -1,0 +1,56 @@
+{
+  "generated_at": "2026-03-02T18:03:28.671592",
+  "algorithm": "RandomForestClassifier",
+  "hyperparameters": {
+    "n_estimators": 200,
+    "max_depth": 4,
+    "max_features": 10,
+    "class_weight": {
+      "0": 2,
+      "1": 1
+    },
+    "random_state": 42
+  },
+  "threshold": 0.65,
+  "class_distribution": {
+    "HIGH": 26,
+    "LOW": 73
+  },
+  "loocv_accuracy": 0.7878787878787878,
+  "confusion_matrix": [
+    [
+      65,
+      8
+    ],
+    [
+      13,
+      13
+    ]
+  ],
+  "classification_report": {
+    "LOW": {
+      "precision": 0.8333333333333334,
+      "recall": 0.8904109589041096,
+      "f1-score": 0.8609271523178808,
+      "support": 73.0
+    },
+    "HIGH": {
+      "precision": 0.6190476190476191,
+      "recall": 0.5,
+      "f1-score": 0.5531914893617021,
+      "support": 26.0
+    },
+    "macro avg": {
+      "precision": 0.7261904761904763,
+      "recall": 0.6952054794520548,
+      "f1-score": 0.7070593208397915,
+      "support": 99.0
+    },
+    "weighted avg": {
+      "precision": 0.7770562770562771,
+      "recall": 0.7878787878787878,
+      "f1-score": 0.7801076852788844,
+      "support": 99.0
+    }
+  }
+}
