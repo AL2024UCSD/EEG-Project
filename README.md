@@ -88,76 +88,146 @@ group_imagined_vs_actual/
 
 
 # EEG Project: MI BCI Compatibility Classifier Project (Quarter 2)
-**Author:** Shaheer Khan , Daniel Mansperger, Andrew Li  
-**Date:** Jan-Mar 2025
+**Author:** Shaheer Khan, Daniel Mansperger, Andrew Li  
+**Date:** Jan–Mar 2025
 
 ## Overview
-Our project focuses on the creation of a motor imagery brain-computer interface literacy classifier that can predict, given minimal EEG data and recordings, whether or not a person will be able to use a motor imagery BCI. Using multiple python and jupyter notebook files, along with reusing code and utilizing information garnered from our previous project (Imagined vs Actual Movement Analysis from Quarter 1), we preprocessed data from Physionet's EEG Motor Movement/Imagery Dataset, extracted various features we believed to be useful in predicting for MI BCI compatibility, and created a combined dataset with all of our features. We also used MetaBCI decoders to generate the ground truth labels (roughly how BCI-compatible they are) for each test subject. 
+Our project focuses on creating a **low-sample MI-BCI literacy screening model** that predicts, from minimal EEG recordings, whether a person is likely to be compatible with a motor imagery (MI) BCI. In this repo, we preprocess EEG from PhysioNet’s EEG Motor Movement/Imagery Dataset, extract interpretable EEG-derived features, and produce subject-level feature tables used downstream for model training. We also generate decoder-derived “ground truth” literacy labels using CSP–LDA (MetaBCI-style) decoders.
+
+> **Model training + web demo** are maintained in the companion repo:
+> - https://github.com/Shaheer2492/BCI-Classifer
+
+### What this repo produces (outputs)
+- Feature tables (CSV) per subject (resting + early-trial + engineered features)
+- Various visualizations used to better understand select features, along with other visuals meant for the project poster and paper
+- Ground-truth subject “compatibility scores” (decoder accuracy CSV)
+
+---
 
 ## Features Extracted
 - Power Spectral Entropy (PSE)
-- Lempel-Ziv Complexity (LZC)
-- Theta-Alpha Power Ratio (TAR)
-- Alpha and Beta power
+- Lempel–Ziv Complexity (LZC)
+- Theta–Alpha Power Ratio (TAR)
+- Alpha and Beta power (including sub-bands)
 - Alpha asymmetry
-- Alpha Power Variance
-- Alpha and Beta power peaks
-- Aperiodic Exponent
-- SMR baseline strength 
-- individual alpha frequency (IAF)
-- interhemispheric coherence
+- Alpha power variance
+- Alpha/Beta power peaks + Individual Alpha Frequency (IAF)
+- Aperiodic exponent (spectral slope)
+- SMR baseline strength
+- Interhemispheric coherence (C3–C4)
+
+> Note: features are often subdivided by **channel**, **condition** (rest / imagined / real), and **frequency band** where applicable.
+
+---
 
 ## Relevant coding files
-- imagined_vs_actual_analysis_new.py (some functions reused in andrew_notebook.py)
-- andrew_notebook.ipynb (used to initially extract Power Spectral Entropy (PSE), Lempel-Ziv Complexity (LZC), and Theta-Alpha Power Ratio (TAR), also used for some EDA and visualizations on those features)
-- daniel_final.py (used to extract other features, modify the andrew_notebook features for easier implementation, and to create the combined features dataset (eeg_features.csv))
-- EDA_daniel.ipynb (used for more EDA on features)
-- test_load.py (extracts the MetaBCI labels, creates the physionetmi_subject_mean_accuracy.csv file)
+- `imagined_vs_actual_analysis_new.py` (Quarter 1 legacy; some functions reused)
+- `andrew_notebook_updated.ipynb`  
+  Extracts PSE/LZC/TAR features and exports:
+  - `eeg_features_andrew_new.csv`
+  - `eeg_features_andrew_compact_new.csv`
+- `daniel_final.py`  
+  Extracts rhythm/SMR/coherence/aperiodic-style features and can export combined feature tables (filenames depend on current settings in the script).
+- `EDA_daniel.ipynb` (feature EDA + plots)
+- `test_load.py`  
+  Generates decoder-derived labels and writes `physionetmi_subject_mean_accuracy.csv`
 
+---
 
 ## Relevant folders/csv files
-- eeg-motor-movementimagery-dataset-1.0.0 (contains EEG recordings from 109 users, used for our feature extraction and model testing)
-- eeg_features.csv (contains ALL of our features for each subject from the Physionet dataset)
-- eeg_features_andrew and eeg_features_andrew_compact.csv (contains the features extracted from the andrew_notebook.ipynb file, the compact file removes the by-trial division found in the non-compact file)
-- physionetmi_subject_mean_accuracy.csv (contains the "compatibility scores" for each subject from the Physionet dataset)
+- `eeg-motor-movementimagery-dataset-1.0.0/`  
+  Contains EEG recordings from 109 subjects (EDF + event files).
+- `physionetmi_subject_mean_accuracy.csv`  
+  Subject-level decoder accuracy (ground-truth “literacy score”).
+- Feature tables (latest versions; filenames may change over time):
+  - `eeg_features_v4.csv` (full merged/combined features per subject; newest version)
+  - `eeg_features_andrew_new.csv` and `eeg_features_andrew_compact_new.csv`  
+    (“compact” = one row per subject; non-compact may include trial-level breakdowns depending on notebook settings)
 
-It should be noted that all features are divided into subfeatures via electrode, MI vs actual movement vs resting, frequency, and/or etc.
+---
 
 ## How to run code
 
-- Clone the repo, build the docker file, run the dockerfile (remember to have docker desktop open), alternatively run the requirements.txt file
+### General workflow (recommended order)
+1. **Generate ground-truth labels**
+   ```bash
+   python test_load.py
+   ```
+   Output: `physionetmi_subject_mean_accuracy.csv`
 
-- For the notebooks, all that is needed is to run all the cells in order (for example, if using VSCode, just hit the "Run All" button on the top center of the interface). For andrew_notebook.ipynb, if you wish to remake the csv files, just remove the single quotes from beginning and end of the 2 csv filebuilding sections. 
+2. **Extract features**
+   - Run `daniel_final.py`:
+     ```bash
+     python daniel_final.py
+     ```
+   - Run `andrew_notebook_updated.ipynb` (Run All).  
+     If you want to recreate the CSVs, ensure the export cells are **uncommented**.
 
-- for the py files, use: 
-'''
-python (python file name here).py
-'''
+3. **EDA / plots (optional)**
+   - Open and run `EDA_daniel.ipynb`
 
-### Quick Start (Docker)
+### Notes for notebooks
+- In VSCode/Jupyter, you can use **Run All**.
+- If CSV-writing cells are commented out to avoid long logs, just uncomment them and rerun those cells.
+
+### Notes for `.py` scripts
+Use:
+```bash
+python <filename>.py
+```
+
+---
+
+## Quick Start (Docker)
+
+> **Tip:** If your dataset folder is inside the repo, add a `.dockerignore` so Docker doesn’t copy the entire dataset into the build context.
+
+### Build
 ```bash
 docker build -t eeg-project .
-docker run -it --rm -v $(pwd):/workspace eeg-project bash
-from multi_subject_imagined_vs_actual_new import MultiSubjectAnalyzer
-python test_load.py
 ```
-(run rest of py files)
 
-### Local Installation
+### Run (mount the repo into the container)
+```bash
+docker run -it --rm \
+  -v "$(pwd)":/workspace \
+  eeg-project bash
+```
+
+### Inside Docker: run scripts
+```bash
+python test_load.py
+python daniel_final.py
+```
+Then open and run notebooks with Jupyter if desired:
+```bash
+jupyter lab --ip 0.0.0.0 --port 8888 --no-browser --allow-root
+```
+
+---
+
+## Local Installation
 ```bash
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-from multi_subject_imagined_vs_actual_new import MultiSubjectAnalyzer
-python test_load.py
 ```
-(run rest of py files)
 
-### Requirements
-- Python 3.7+
+Run scripts:
+```bash
+python test_load.py
+python daniel_final.py
+```
+
+---
+
+## Requirements
+- Python **3.11+** recommended (older versions may work but are less tested)
 - MNE-Python
 - NumPy, SciPy, Pandas
 - Matplotlib, Seaborn
+- json
+- scikit-learn, statsmodels
 - tqdm (progress bars)
-- 8+ GB RAM recommended
-- Multi-core CPU for parallel processing
+- 8+ GB RAM recommended (more helps when running across many subjects)
+- Multi-core CPU recommended for faster preprocessing/feature extraction
