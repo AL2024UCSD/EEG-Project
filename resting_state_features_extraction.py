@@ -923,6 +923,14 @@ def all_subjects_analysis(
     pd.DataFrame
         DataFrame indexed by subject_id with one column per extracted feature.
     """
+
+    Path("outputs").mkdir(exist_ok=True)
+    logging.basicConfig(
+        filename="outputs/feature_extraction.log",
+        level=logging.INFO,
+        format="%(asctime)s - %(message)s"
+    )
+    logging.info("Feature extraction started")
     
     base_path = Path(base_path)
     subject_dirs = sorted([
@@ -970,6 +978,9 @@ def all_subjects_analysis(
 
         except Exception as e:
             row['preprocessing_error'] = str(e)
+            logging.error(f"{sid}: {e}")
+        else:
+            logging.info(f"{sid}: features extracted successfully")
         
         rows.append(row)
     
