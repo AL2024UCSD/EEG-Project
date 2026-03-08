@@ -306,7 +306,7 @@ class PhysionetMIGroundTruthGenerator:
                 'error': str(e)
             }
 
-    def generate_all_labels(self, output_path='results/ground_truth_labels.json'):
+    def generate_all_labels(self, output_path='json-from-bci-classifier/ground_truth_labels.json'):
         """
         Generate ground truth labels for all subjects across both tasks.
 
@@ -446,7 +446,7 @@ def main():
 
     # Generate labels
     results = generator.generate_all_labels(
-        output_path='results/ground_truth_labels.json'
+        output_path='json-from-bci-classifier/ground_truth_labels.json'
     )
 
     return results
