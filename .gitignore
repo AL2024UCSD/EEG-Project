@@ -1,2 +1,6 @@
+env_test/
+.venv/
+__pycache__/
+*.pyc
+outputs/
 .DS_Store
-**/.DS_Store
