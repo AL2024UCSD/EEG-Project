@@ -39,3 +39,6 @@ ipywidgets>=8.0.0
 # Demo / API server (optional; only needed if running prediction_server.py)
 flask>=3.0.0
 flask-cors>=4.0.0
+
+# Pytest
+pytest>=7.4.0
