@@ -87,20 +87,28 @@ group_imagined_vs_actual/
 - Multi-core CPU for parallel processing
 
 
+
+
+
+
+
+
 # EEG Project: MI BCI Compatibility Classifier Project (Quarter 2)
+
 **Author:** Shaheer Khan, Daniel Mansperger, Andrew Li  
 **Date:** Jan–Mar 2025
 
 ## Overview
-Our project focuses on creating a **low-sample MI-BCI literacy screening model** that predicts, from minimal EEG recordings, whether a person is likely to be compatible with a motor imagery (MI) BCI. In this repo, we preprocess EEG from PhysioNet’s EEG Motor Movement/Imagery Dataset, extract interpretable EEG-derived features, and produce subject-level feature tables used downstream for model training. We also generate decoder-derived “ground truth” literacy labels using CSP–LDA (MetaBCI-style) decoders.
 
-> **Model training + web demo** are maintained in the companion repo:
-> - https://github.com/Shaheer2492/BCI-Classifer
+Our Quarter 2 project focuses on building a **low-sample MI-BCI literacy screening pipeline**. This repository contains the **data preprocessing, feature extraction, and exploratory visualizations** on PhysioNet’s EEG Motor Movement/Imagery dataset. We extract compact, interpretable EEG-derived features (primarily resting-state and other low-burden summaries) and generate decoder-derived “ground truth” labels used downstream for model training.
+
+> **Model training + web demo** are maintained in the companion repo:  
+> https://github.com/Shaheer2492/BCI-Classifer
 
 ### What this repo produces (outputs)
-- Feature tables (CSV) per subject (resting + early-trial + engineered features)
-- Various visualizations used to better understand select features, along with other visuals meant for the project poster and paper
-- Ground-truth subject “compatibility scores” (decoder accuracy CSV)
+- Subject-level feature tables (CSV), including the final **resting-state feature table**
+- Decoder-derived ground-truth labels (JSON/CSV)
+- Visualizations used for the paper/poster
 
 ---
 
@@ -121,28 +129,35 @@ Our project focuses on creating a **low-sample MI-BCI literacy screening model**
 ---
 
 ## Relevant coding files
-- `imagined_vs_actual_analysis_new.py` (Quarter 1 legacy; some functions reused)
-- `andrew_notebook_updated.ipynb`  
-  Extracts PSE/LZC/TAR features and exports:
-  - `eeg_features_andrew_new.csv`
-  - `eeg_features_andrew_compact_new.csv`
-- `daniel_final.py`  
-  Extracts rhythm/SMR/coherence/aperiodic-style features and can export combined feature tables (filenames depend on current settings in the script).
-- `EDA_daniel.ipynb` (feature EDA + plots)
-- `test_load.py`  
-  Generates decoder-derived labels and writes `physionetmi_subject_mean_accuracy.csv`
+- `resting_state_features_extraction.py`  
+  Primary script for preprocessing and **resting-state feature extraction**.
+- `test_resting_state_features_extraction.py`  
+  Quick validation / smoke-test script for the extraction pipeline.
+- `resting_state_eda.ipynb`  
+  EDA and plots focused on resting-state features.
+- `more_feat_and_vis.ipynb`  
+  Additional feature experiments + visualization notebook, code eventually used to help generate several features in the `resting_state_features_extraction.py`.
+- `generate_ground_truth_labels.py`  
+  Generates decoder-derived ground-truth labels used for downstream literacy prediction, taken from the BCI-Classifier repo.
+- Quarter 1 legacy (kept for reference / reuse):
+  - `multi_subject_imagined_vs_actual_new.py`
+  - `imagined_vs_actual_analysis_new.py`
 
 ---
 
 ## Relevant folders/csv files
 - `eeg-motor-movementimagery-dataset-1.0.0/`  
-  Contains EEG recordings from 109 subjects (EDF + event files).
-- `physionetmi_subject_mean_accuracy.csv`  
-  Subject-level decoder accuracy (ground-truth “literacy score”).
-- Feature tables (latest versions; filenames may change over time):
-  - `eeg_features_v4.csv` (full merged/combined features per subject; newest version)
-  - `eeg_features_andrew_new.csv` and `eeg_features_andrew_compact_new.csv`  
-    (“compact” = one row per subject; non-compact may include trial-level breakdowns depending on notebook settings)
+  Local copy of the PhysioNet EEGBCI dataset (EDF + event files).
+- `resting_state_features.csv`  
+  **Final** resting-state feature table
+- `eeg_features_column_descriptions.pdf`  
+  Column glossary / feature descriptions.
+- `json-from-bci-classifier/`  
+  Copies of results JSONs from the training repo for plotting/reporting (e.g., model evaluation + classifier metadata).
+- `outputs/`  
+  Logs generated during extraction runs.
+- `Visualizations/` and `Visualizations_ERDERS%/`  
+  Saved figures used in the report/poster.
 
 ---
 
@@ -151,24 +166,24 @@ Our project focuses on creating a **low-sample MI-BCI literacy screening model**
 ### General workflow (recommended order)
 1. **Generate ground-truth labels**
    ```bash
-   python test_load.py
+   python generate_ground_truth_labels.py
    ```
-   Output: `physionetmi_subject_mean_accuracy.csv`
+   Outputs: label JSON/CSV artifacts (see `json-from-bci-classifier/` if you keep copies here).
 
-2. **Extract features**
-   - Run `daniel_final.py`:
-     ```bash
-     python daniel_final.py
-     ```
-   - Run `andrew_notebook_updated.ipynb` (Run All).  
-     If you want to recreate the CSVs, ensure the export cells are **uncommented**.
+2. **Extract resting-state features**
+   ```bash
+   python resting_state_features_extraction.py
+   ```
+   Outputs: `resting_state_features.csv` (and logs under `outputs/`).
 
-3. **EDA / plots (optional)**
-   - Open and run `EDA_daniel.ipynb`
+3. **EDA / visualizations (optional)**
+   - Open and run:
+     - `resting_state_eda.ipynb`
+     - `more_feat_and_vis.ipynb`
 
 ### Notes for notebooks
-- In VSCode/Jupyter, you can use **Run All**.
-- If CSV-writing cells are commented out to avoid long logs, just uncomment them and rerun those cells.
+- In VSCode/Jupyter, use **Run All**.
+- If export cells are commented out to avoid verbose logs, uncomment and rerun those cells.
 
 ### Notes for `.py` scripts
 Use:
@@ -178,28 +193,59 @@ python <filename>.py
 
 ---
 
-## Quick Start (Docker)
+## Output Structure
+Typical outputs generated/used by the Quarter 2 pipeline:
 
-> **Tip:** If your dataset folder is inside the repo, add a `.dockerignore` so Docker doesn’t copy the entire dataset into the build context.
+```
+outputs/
+└── feature_extraction.log
 
-### Build
-```bash
-docker build -t eeg-project .
+json-from-bci-classifier/
+├── ground_truth_labels.json
+├── early_trial_features_merged copy.json
+├── model_evaluation copy.json
+└── rf_classifier_metadata.json
+
+Visualizations/
+└── *.png
+
+Visualizations_ERDERS%/
+└── *.png
+
+resting_state_features.csv
 ```
 
-### Run (mount the repo into the container)
+---
+
+## Technical Details
+### Processing Steps (high level)
+1. **Data loading:** EDF files + event markers from the PhysioNet EEGBCI dataset.
+2. **Preprocessing:** re-referencing and bandpass filtering (parameters documented in the extraction script).
+3. **Resting-state feature extraction:** compute spectral, rhythm-strength, and stability metrics from baseline recordings.
+4. **Ground truth (decoder-derived literacy):** CSP–LDA decoding performance used as the target label for the screening model (trained in the companion repo).
+5. **EDA/visualization:** quality checks, distribution plots, and report figures.
+
+### Reproducibility tips
+- Keep the dataset folder out of Docker build context (use `.dockerignore`) to avoid huge images.
+- If channel names include punctuation (e.g., `Cz..`), you may need to normalize channel labels in code when selecting channels.
+
+---
+
+## Quick Start (Docker)
 ```bash
+docker build -t eeg-project .
 docker run -it --rm \
   -v "$(pwd)":/workspace \
   eeg-project bash
 ```
 
-### Inside Docker: run scripts
+Inside Docker:
 ```bash
-python test_load.py
-python daniel_final.py
+python generate_ground_truth_labels.py
+python resting_state_features_extraction.py
 ```
-Then open and run notebooks with Jupyter if desired:
+
+(Optional) start Jupyter:
 ```bash
 jupyter lab --ip 0.0.0.0 --port 8888 --no-browser --allow-root
 ```
@@ -213,20 +259,19 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Run scripts:
+Run:
 ```bash
-python test_load.py
-python daniel_final.py
+python generate_ground_truth_labels.py
+python resting_state_features_extraction.py
 ```
 
 ---
 
 ## Requirements
-- Python **3.11+** recommended (older versions may work but are less tested)
+- Python **3.11+** recommended
 - MNE-Python
 - NumPy, SciPy, Pandas
 - Matplotlib, Seaborn
-- json
 - scikit-learn, statsmodels
 - tqdm (progress bars)
 - 8+ GB RAM recommended (more helps when running across many subjects)
