@@ -894,7 +894,7 @@ def preprocess(subject_id, base_path, run_id = 'R01'):
 
 def all_subjects_analysis(
     base_path='eeg-motor-movementimagery-dataset-1.0.0/files',
-    out_csv='eeg_features.csv'):
+    out_csv='resting_state_features.csv'):
     """
     Extract resting-state EEG features for all subjects and save to CSV.
 
