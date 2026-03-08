@@ -13,7 +13,7 @@ pyedflib>=0.1.36            # optional EDF backend; improves EDF I/O in some env
 mne-connectivity>=0.7.0     # coherence / connectivity utilities
 
 # Spectral parameterization (aperiodic/peaks) (optional; used if you fit aperiodic exponent/IAF)
-specparam>=2.0.0            # formerly FOOOF
+specparam>=2.0.0rc0            # formerly FOOOF
 
 # Machine learning / stats
 scikit-learn>=1.3.0
