@@ -30,7 +30,27 @@ LAPLACIAN_SURROUNDING = {   # 4 closest electrodes to key electrode (includes ab
 }
 
 def apply_laplacian_filtering(raw_cleaned, channels):
-    """ Applies Laplacian filtering to channels """
+    """
+    Apply surface Laplacian filtering to a set of EEG channels.
+
+    For each requested channel, subtracts the mean of its surrounding electrodes
+    (as defined in LAPLACIAN_SURROUNDING) from the center electrode signal. This
+    reduces volume conduction and improves spatial specificity. If no surrounding
+    electrodes are available for a channel, the raw signal is returned as-is.
+
+    Parameters:
+    raw_cleaned : mne.io.Raw
+        Preprocessed MNE Raw object containing EEG data.
+    channels : list of str
+        List of center electrode names to apply Laplacian filtering to.
+
+    Returns:
+    laplacian_data : dict
+        Dictionary mapping channel name to its Laplacian-filtered signal
+        as a 1D numpy array (n_timepoints,).
+    sfreq : float
+        Sampling frequency of the data in Hz.
+    """
 
     raw = raw_cleaned.copy()
     
@@ -63,7 +83,36 @@ def apply_laplacian_filtering(raw_cleaned, channels):
 
 
 def resting_alpha_power(raw_cleaned):
-    """Computing resting Alpha Power for one subject, with rpl and TAR"""
+    """
+    Compute resting-state alpha power features for one subject.
+
+    Applies Laplacian filtering to motor channels, then computes Welch PSD
+    for each channel. Extracts absolute alpha (8-13 Hz) and theta (4-8 Hz)
+    power, total broadband power (1-40 Hz), and derives relative alpha power
+    (RPL) and theta/alpha ratio (TAR). Also returns per-hemisphere alpha power
+    at C3/C4 and their log-ratio asymmetry score.
+
+    Parameters:
+    raw_cleaned : mne.io.Raw
+        Preprocessed MNE Raw object. Intended for use with eyes-closed baseline (R02).
+
+    Returns:
+    dict with keys:
+        rpl_alpha : float
+            Alpha power as a fraction of total broadband power (1-40 Hz).
+        tar : float
+            Theta-to-alpha power ratio.
+        resting_alpha_power : float
+            Mean absolute alpha power across channels (µV²/Hz).
+        resting_total_power : float
+            Mean total broadband power across channels (µV²/Hz).
+        alpha_power_c3 : float
+            Absolute alpha power at C3.
+        alpha_power_c4 : float
+            Absolute alpha power at C4.
+        alpha_asymmetry : float
+            Log(alpha_C4) - log(alpha_C3). Positive values indicate right-hemisphere dominance.
+    """
 
     raw = raw_cleaned.copy()   # copy to not mutate the original
     
@@ -95,16 +144,6 @@ def resting_alpha_power(raw_cleaned):
     resting_state_total_power = np.mean(total_powers)
     tar = resting_state_theta_power / resting_state_alpha_power
     rpl = resting_state_alpha_power / resting_state_total_power # relative power level
-    
-
-    # Considerations:
-        # can average across just frequencies
-        # can average across just channels
-        # can average across both (for a single number) (current)
-
-    # Additional, general considerations:
-        # 1. resting alpha power relative to other bands
-        # 2. resting alpha power with eyes open, and/or average across the two
 
     return {
         "rpl_alpha": rpl,   # relative power level
@@ -118,7 +157,30 @@ def resting_alpha_power(raw_cleaned):
 
 
 def alpha_power_variability(raw_cleaned):
-    """ compute variability of alpha power across sliding windows at C3 and C4 electrodes for one subject """
+    """
+    Compute variability of alpha power over time at C3 and C4 for one subject.
+
+    Applies Laplacian filtering to C3 and C4, then slides a 2-second window
+    (1-second overlap) over each signal, computing alpha band power (8-13 Hz)
+    in each window via Welch PSD. Returns both the raw standard deviation and
+    the coefficient of variation (CV) of alpha power across windows, separately
+    for each electrode.
+
+    Parameters:
+    raw_cleaned : mne.io.Raw
+        Preprocessed MNE Raw object. Intended for use with eyes-open baseline (R01).
+
+    Returns:
+    dict with keys:
+        alpha_var_C3 : float
+            Standard deviation of alpha power across windows at C3.
+        alpha_cv_C3 : float
+            Coefficient of variation (std / mean) of alpha power at C3.
+        alpha_var_C4 : float
+            Standard deviation of alpha power across windows at C4.
+        alpha_cv_C4 : float
+            Coefficient of variation of alpha power at C4.
+    """
     
     raw = raw_cleaned.copy()
     channels = ['C3', 'C4']
@@ -154,7 +216,28 @@ def alpha_power_variability(raw_cleaned):
 
 
 def interhemispheric_coherence(raw_cleaned):
-    """ Compute magnitude squared coherence between C3 and C4 in mu and beta bands for one subject"""
+    """
+    Compute magnitude-squared coherence between C3 and C4 for one subject.
+
+    Applies Laplacian filtering to C3 and C4, then computes coherence across
+    the mu (8-13 Hz), full beta (13-30 Hz), low beta (13-20 Hz), and upper
+    beta (20-30 Hz) bands using Welch's method.
+
+    Parameters:
+    raw_cleaned : mne.io.Raw
+        Preprocessed MNE Raw object. Intended for use with eyes-open baseline (R01).
+
+    Returns:
+    dict with keys:
+        coherence_mu : float
+            Mean coherence in the mu/alpha band (8-13 Hz).
+        coherence_beta : float
+            Mean coherence across the full beta band (13-30 Hz).
+        coherence_low_beta : float
+            Mean coherence in the low beta band (13-20 Hz).
+        coherence_upper_beta : float
+            Mean coherence in the upper beta band (20-30 Hz).
+    """
 
     raw = raw_cleaned.copy()
     channels = ['C3', 'C4']
@@ -183,7 +266,24 @@ def interhemispheric_coherence(raw_cleaned):
 
 
 def resting_lower_beta_power(raw_cleaned):
-    """Computing resting lower Beta Power for one subject (13-20 Hz)"""
+    """
+    Compute resting-state lower beta power features for one subject (13-20 Hz).
+
+    Applies Laplacian filtering to motor channels, computes Welch PSD for each,
+    and returns mean absolute lower beta power and its fraction of total broadband
+    power (1-40 Hz).
+
+    Parameters:
+    raw_cleaned : mne.io.Raw
+        Preprocessed MNE Raw object. Intended for use with eyes-closed baseline (R02).
+
+    Returns:
+    dict with keys:
+        rpl_lower_beta : float
+            Lower beta power as a fraction of total broadband power (1-40 Hz).
+        resting_lower_beta_power : float
+            Mean absolute lower beta power across channels (µV²/Hz).
+    """
 
     raw = raw_cleaned.copy()   # copy to not mutate the original
     
@@ -217,7 +317,24 @@ def resting_lower_beta_power(raw_cleaned):
 
 
 def resting_upper_beta_power(raw_cleaned):
-    """Computing resting upper Beta Power for one subject (20-30 Hz)"""
+    """
+    Compute resting-state upper beta power features for one subject (20-30 Hz).
+
+    Applies Laplacian filtering to motor channels, computes Welch PSD for each,
+    and returns mean absolute upper beta power and its fraction of total broadband
+    power (1-40 Hz).
+
+    Parameters:
+    raw_cleaned : mne.io.Raw
+        Preprocessed MNE Raw object. Intended for use with eyes-closed baseline (R02).
+
+    Returns:
+    dict with keys:
+        rpl_upper_beta : float
+            Upper beta power as a fraction of total broadband power (1-40 Hz).
+        resting_upper_beta_power : float
+            Mean absolute upper beta power across channels (µV²/Hz).
+    """
 
     raw = raw_cleaned.copy()   # copy to not mutate the original
     
@@ -250,10 +367,35 @@ def resting_upper_beta_power(raw_cleaned):
     }
 
 
-# Second feature: SMR baseline strength
+# SMR baseline strength
 
 def fit_with_multistart(freqs, psd_subset, bounds):
-    """Try multiple lambda starting points, return best fit by residual."""
+    """
+    Fit freq_curve to PSD data using multiple lambda starting points.
+
+    Tries 6 evenly-spaced lambda initializations (0.25 to 2.0) and returns
+    the parameter set that achieves the lowest sum-of-squared residuals.
+    This improves robustness over single-start fitting, which is sensitive
+    to the choice of initial parameters.
+
+    Parameters:
+    freqs : np.ndarray
+        Array of frequency values (Hz), shape (n_freqs,).
+    psd_subset : np.ndarray
+        PSD values in dB at each frequency in freqs, shape (n_freqs,).
+    bounds : tuple of (list, list)
+        Lower and upper bounds for each parameter in freq_curve, passed
+        directly to scipy.optimize.curve_fit.
+
+    Returns:
+    best_params : np.ndarray
+        Optimal parameters for freq_curve with the lowest residual across
+        all starting points, shape (9,).
+
+    Raises:
+    RuntimeError
+        If all 6 starting points fail to converge.
+    """
     best_params = None
     best_residual = np.inf
     
@@ -287,7 +429,41 @@ def fit_with_multistart(freqs, psd_subset, bounds):
     return best_params
 
 def baseline_smr_strength(raw_cleaned):
-    """Computing SMR Baseline Strength for one subject"""
+    """
+    Compute SMR baseline strength and spectral peak features for one subject.
+
+    Applies Laplacian filtering to C3 and C4, computes Welch PSD (converted to
+    dB), and fits a parametric model (1/f noise floor + two Gaussians for alpha
+    and beta peaks) using multistart curve fitting. SMR strength is defined as
+    the maximum peak height above the fitted noise floor, averaged across C3 and
+    C4. Also extracts individual alpha frequency (IAF), alpha/beta peak amplitudes,
+    beta center frequency, and aperiodic exponent per electrode.
+
+    IAF is set to NaN if the fitted alpha peak center is at the band boundary
+    (indicating no clear peak) or if the peak amplitude is below threshold.
+
+    Parameters:
+    raw_cleaned : mne.io.Raw
+        Preprocessed MNE Raw object. Intended for use with eyes-open baseline (R01).
+
+    Returns:
+    dict with keys:
+        smr_strength : float
+            Mean peak height above noise floor across C3 and C4 (dB).
+        IAF_c3 : float or NaN
+            Individual alpha frequency at C3 (Hz). NaN if no clear peak detected.
+        alpha_peak_amp_c3 : float
+            Alpha Gaussian amplitude at C3 (dB above noise).
+        beta_peak_amp_c3 : float
+            Beta Gaussian amplitude at C3 (dB above noise).
+        beta_center_freq_c3 : float
+            Center frequency of fitted beta peak at C3 (Hz).
+        aperiodic_exp_c3 : float
+            Aperiodic (1/f) exponent at C3.
+        IAF_c4, alpha_peak_amp_c4, beta_peak_amp_c4,
+        beta_center_freq_c4, aperiodic_exp_c4 : float
+            Same quantities for C4.
+    """
     raw = raw_cleaned.copy()
 
     channels = ['C3', 'C4']
@@ -359,7 +535,7 @@ def baseline_smr_strength(raw_cleaned):
 
     lambda_fit, k1, k2, k3, k4, mu1, mu2, sig1, sig2 = optimal_params_c3
     g_total_c3 = freq_curve(freqs, *optimal_params_c3)  # full fitted curve in dB
-    g1_c3 = k1 + k2 / (freqs ** lambda_fit)     # noise componenet in dB
+    g1_c3 = k1 + k2 / (freqs ** lambda_fit)     # noise component in dB
     g2_c3 = g_total_c3 - g1_c3      # g2 = total - noise in dB
     smr_strength_c3 = np.max(g2_c3)     # maximum peak height above noise
 
@@ -406,21 +582,43 @@ def baseline_smr_strength(raw_cleaned):
             }
 
 def freq_curve(freqs, lambda_val, k1, k2, k3, k4, mu1, mu2, sig1, sig2):
-    # Parameters:
-        # freqs: array of frequencies
+    """
+    Parametric model of EEG power spectral density in dB.
 
-        # k1: baseline offset (shufts whole curve up/down)
-        # k2: scale factor (how steep the 1/f decline is)
-        # lambda_val: exponent (controls slope)
-        
-        # mu1, mu2: peak positions
-        # sig1, sig2: peak widths
-        # k3, k4: peak amplitudes
-    
-    # Notes: PSD modeled as two components:
-        # g1(freqs) = Noise floor: k1 + k2/f^lambda_val
-        # g2(freqs) = Two gaussian peaks: k3 * gaussian1 + k4 * gaussian2 (alpha (mu) and beta peaks)
-        # total output: g1(freqs) + g2(freqs)
+    Models the PSD as the sum of an aperiodic 1/f noise floor (g1) and two
+    Gaussian peaks representing the alpha/mu and beta rhythms (g2):
+
+        g1(f) = k1 + k2 / f^lambda_val
+        g2(f) = k3 * exp(-0.5 * ((f - mu1) / sig1)^2)
+              + k4 * exp(-0.5 * ((f - mu2) / sig2)^2)
+        output = g1(f) + g2(f)
+
+    Parameters:
+    freqs : np.ndarray
+        Array of frequency values (Hz).
+    lambda_val : float
+        Aperiodic exponent controlling the steepness of the 1/f slope.
+    k1 : float
+        Baseline offset; shifts the entire noise floor up or down.
+    k2 : float
+        Scale factor for the 1/f component.
+    k3 : float
+        Amplitude of the first Gaussian (alpha/mu peak).
+    k4 : float
+        Amplitude of the second Gaussian (beta peak).
+    mu1 : float
+        Center frequency of the alpha/mu Gaussian (Hz).
+    mu2 : float
+        Center frequency of the beta Gaussian (Hz).
+    sig1 : float
+        Width (standard deviation) of the alpha/mu Gaussian (Hz).
+    sig2 : float
+        Width (standard deviation) of the beta Gaussian (Hz).
+
+    Returns:
+    np.ndarray
+        Modeled PSD values at each frequency in freqs (dB).
+    """
     
 
     g1 = k1 + k2/(freqs**lambda_val)
@@ -432,21 +630,39 @@ def freq_curve(freqs, lambda_val, k1, k2, k3, k4, mu1, mu2, sig1, sig2):
     return g1 + g2
 
 
-# Feature 5: PSE (baseline runs) (based on Andrew's code, andrew_notebook.ipynb)
+# Feature 5: PSE (baseline runs)
 def compute_pse(raw_cleaned):
-    """ Computing Power Spectral Entropy (PSE) for one subject """
+    """
+    Compute Power Spectral Entropy (PSE) for one subject.
+
+    Applies Laplacian filtering to motor channels, computes Welch PSD for each,
+    and calculates normalized Shannon entropy over the SMR band (8-30 Hz).
+    Lower PSE indicates a more peaked, organised spectrum; higher PSE indicates
+    a flatter, more random distribution of power across frequencies.
+
+    Parameters:
+    raw_cleaned : mne.io.Raw
+        Preprocessed MNE Raw object. Intended for use with eyes-open baseline (R01).
+
+    Returns:
+    dict with keys:
+        pse_C3, pse_C4, pse_Cz, pse_FC1, pse_FC2, pse_CP1, pse_CP2 : float
+            Normalized spectral entropy (0-1) in the SMR band for each channel.
+        pse_avg : float
+            Mean PSE across all channels.
+    """
     
     raw = raw_cleaned.copy()
     channels = ['C3', 'C4', 'Cz', 'FC1', 'FC2', 'CP1', 'CP2']
     laplacian_data, sfreq = apply_laplacian_filtering(raw, channels)
-
+    
     pse_dict = {}
     for ch, ch_signal in laplacian_data.items():
         freqs, psd = signal.welch(ch_signal,
-                                  fs = sfreq,
-                                  window = 'hann',
-                                  nperseg = 512,
-                                  noverlap= 256)
+                                  fs=sfreq,
+                                  window='hann',
+                                  nperseg=512,
+                                  noverlap=256)
         smr_mask = (freqs >= 8) & (freqs <= 30)
         pse_dict[f"pse_{ch}"] = spectral_entropy(psd[smr_mask])
     
@@ -455,7 +671,25 @@ def compute_pse(raw_cleaned):
 
 
 def spectral_entropy(psd, eps=1e-12):
-    """ PSE Helper """
+    """
+    Compute normalized Shannon spectral entropy of a PSD array.
+
+    Treats the PSD as a probability distribution over frequency bins (after
+    normalization) and computes Shannon entropy, normalized by the maximum
+    possible entropy for that number of bins (log2 of bin count). The result
+    is bounded in [0, 1], where 1 is a perfectly flat spectrum and 0 is all
+    power concentrated in a single bin.
+
+    Parameters:
+    psd : np.ndarray
+        Power spectral density values for a frequency band, shape (n_freqs,).
+    eps : float, optional
+        Small constant added to PSD values to avoid log(0). Default is 1e-12.
+
+    Returns:
+    float
+        Normalized spectral entropy in [0, 1].
+    """
     
     # Add small epsilon to avoid log(0)
     psd = psd + eps
@@ -473,7 +707,26 @@ def spectral_entropy(psd, eps=1e-12):
 
 
 def lempel_ziv_complexity(raw_cleaned):
-    """ Computing Lempel-Ziv Complexity (LZC) for one subject"""
+    """
+    Compute Lempel-Ziv Complexity (LZC) for one subject.
+
+    For each motor channel, binarizes the signal relative to its median and
+    applies the LZ76 algorithm to measure signal complexity. Higher LZC
+    indicates a more random, less structured signal; lower LZC indicates
+    more regularity or periodicity. Does not apply Laplacian filtering —
+    uses raw channel signals directly.
+
+    Parameters:
+    raw_cleaned : mne.io.Raw
+        Preprocessed MNE Raw object. Intended for use with eyes-open baseline (R01).
+
+    Returns:
+    dict with keys:
+        lzc_C3, lzc_C4, lzc_Cz, lzc_FC1, lzc_FC2, lzc_CP1, lzc_CP2 : float
+            Normalized LZC for each channel.
+        lzc_avg : float
+            Mean LZC across all channels.
+    """
     
     raw = raw_cleaned.copy()
     channels = ['C3', 'C4', 'Cz', 'FC1', 'FC2', 'CP1', 'CP2']
@@ -494,12 +747,37 @@ def lempel_ziv_complexity(raw_cleaned):
     return lzc_dict
 
 def binarize_signal(x: np.ndarray) -> np.ndarray:
-    """Convert signal to binary: 1 if above median, 0 if below."""
+    """
+    Convert a continuous signal to a binary sequence using the median as threshold.
+
+    Parameters:
+    x : np.ndarray
+        1D array of signal values.
+
+    Returns:
+    np.ndarray
+        Binary array of the same shape as x: 1 where x > median(x), 0 elsewhere.
+    """
     return (x > np.median(x)).astype(int)
 
 
 def lempel_ziv_complexity_calculation(binary_sequence: np.ndarray) -> float:
-    """Compute normalized Lempel-Ziv complexity (LZ76 algorithm)."""
+    """
+    Compute normalized Lempel-Ziv complexity using the LZ76 algorithm.
+
+    Converts the binary sequence to a string and counts the number of distinct
+    substrings encountered during a left-to-right scan (LZ76 complexity measure).
+    Normalizes by n / log2(n) so that the result is comparable across sequences
+    of different lengths.
+
+    Parameters:
+    binary_sequence : np.ndarray
+        1D binary array (values 0 or 1), typically produced by binarize_signal.
+
+    Returns:
+    float
+        Normalized LZC value. Higher values indicate greater complexity.
+    """
     # Convert binary array to string
     s = ''.join(binary_sequence.astype(str))
     n = len(s)
@@ -529,44 +807,35 @@ def lempel_ziv_complexity_calculation(binary_sequence: np.ndarray) -> float:
     # Normalize by maximum
     return c * np.log2(n) / n
 
-
-# def compute_theta_alpha_ratio(raw_cleaned):
-#     """ compute theta/alpha ratio (TAR) for one subject """
-#     raw = raw_cleaned.copy()
-#     channels = ['C3', 'C4', 'Cz', 'FC1', 'FC2', 'CP1', 'CP2']
-
-#     laplacian_data, sfreq = apply_laplacian_filtering(raw, channels)
-
-#     theta_powers  = []
-#     alpha_powers = []
-
-#     for ch, ch_signal in laplacian_data.items():
-#         freqs, psd = signal.welch(ch_signal,
-#                                   fs = sfreq,
-#                                   window = 'hann',
-#                                   nperseg = 512,
-#                                   noverlap = 256)
-        
-#         theta_mask = (freqs >= 4) & (freqs <= 8)
-#         theta_powers.append(np.trapezoid(psd[theta_mask], freqs[theta_mask]))
-
-#         alpha_mask = (freqs >= 8) & (freqs <= 13)
-#         alpha_powers.append(np.trapezoid(psd[alpha_mask], freqs[alpha_mask]))
-    
-#     theta_power = np.mean(theta_powers)
-#     alpha_power = np.mean(alpha_powers)
-#     tar = theta_power / (alpha_power + 1e-10)   # prevent from ballooning
-
-#     return {
-#         "theta_power": theta_power,
-#         "alpha_power": alpha_power,
-#         "tar": tar
-#     }
-
     
 
 def preprocess(subject_id, base_path, run_id = 'R01'):
-    """Loads raw data, applies ICA artifact removal, returns cleaned Raw object"""
+    """
+    Load a raw EEG file and apply standard preprocessing for one subject and run.
+
+    Steps:
+        1. Load the .edf file and strip trailing dots from channel names.
+        2. Apply the standard 10-05 montage.
+        3. Re-reference to common average.
+        4. Bandpass filter 1-40 Hz (firwin).
+        5. Fit ICA (Picard, 20 components) and auto-identify ocular artifact
+           components using frontal channels as EOG proxies (Fp1 for blinks,
+           AF7/AF8 for horizontal eye movements).
+        6. Remove identified artifact components and return the cleaned Raw object.
+
+    Parameters:
+    subject_id : str
+        Subject folder name, e.g. 'S001'.
+    base_path : str or Path
+        Root directory containing per-subject folders.
+    run_id : str, optional
+        Run identifier appended to the subject ID to form the filename,
+        e.g. 'R01' (eyes open) or 'R02' (eyes closed). Default is 'R01'.
+
+    Returns:
+    mne.io.Raw
+        ICA-cleaned Raw object with data preloaded.
+    """
     
     subject_path = Path(base_path)/subject_id
     filename = subject_path / f"{subject_id}{run_id}.edf"
@@ -579,7 +848,7 @@ def preprocess(subject_id, base_path, run_id = 'R01'):
     montage = mne.channels.make_standard_montage('standard_1005')
     raw.set_montage(montage, on_missing = 'ignore')
 
-    # re referencing with common average reference
+    # re referencing to common average 
     raw.set_eeg_reference('average', verbose = False)
 
     # Bandpass filter: using 1-40 instead of 2-35 like in some papers to improve ICA
@@ -626,7 +895,34 @@ def preprocess(subject_id, base_path, run_id = 'R01'):
 def all_subjects_analysis(
     base_path='eeg-motor-movementimagery-dataset-1.0.0/files',
     out_csv='eeg_features.csv'):
-    """Extract features for all subjects -> DataFrame -> CSV."""
+    """
+    Extract resting-state EEG features for all subjects and save to CSV.
+
+    Iterates over all subject directories under base_path (folders matching
+    pattern S[digits]), preprocesses eyes-open (R01) and eyes-closed (R02)
+    baseline runs for each subject, and computes all feature sets. Results
+    are collected into a DataFrame indexed by subject_id and written to CSV.
+    If preprocessing or feature extraction fails for a subject, the error
+    message is stored in a 'preprocessing_error' column and processing
+    continues with the next subject.
+
+    Feature assignment by condition:
+        - Eyes closed (R02): resting_alpha_power, resting_lower_beta_power,
+          resting_upper_beta_power
+        - Eyes open (R01): baseline_smr_strength, alpha_power_variability,
+          interhemispheric_coherence, compute_pse, lempel_ziv_complexity
+
+    Parameters:
+    base_path : str or Path, optional
+        Root directory containing per-subject folders.
+        Default is 'eeg-motor-movementimagery-dataset-1.0.0/files'.
+    out_csv : str, optional
+        Output CSV filename. Default is 'eeg_features.csv'.
+
+    Returns:
+    pd.DataFrame
+        DataFrame indexed by subject_id with one column per extracted feature.
+    """
     
     base_path = Path(base_path)
     subject_dirs = sorted([
